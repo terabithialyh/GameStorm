@@ -1,0 +1,895 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Magic Bean - 魔豆登天</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+
+        body {
+            overflow: hidden;
+            background: linear-gradient(180deg, #87CEEB 0%, #E0F7FA 100%);
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            touch-action: none;
+        }
+
+        #game-container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        canvas {
+            box-shadow: 0 0 50px rgba(0, 0, 0, 0.2);
+        }
+
+        #ui-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            padding: 20px;
+        }
+
+        .hud {
+            display: flex;
+            justify-content: space-between;
+            font-size: 24px;
+            font-weight: bold;
+            color: #333;
+            text-shadow: 2px 2px 0px white;
+        }
+
+        .score-box,
+        .time-box {
+            background: rgba(255, 255, 255, 0.8);
+            padding: 10px 20px;
+            border-radius: 20px;
+            border: 3px solid #66BB6A;
+        }
+
+        #start-screen,
+        #game-over-screen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.6);
+            backdrop-filter: blur(5px);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            color: white;
+            pointer-events: auto;
+            z-index: 10;
+        }
+
+        .hidden {
+            display: none !important;
+        }
+
+        h1 {
+            font-size: 3rem;
+            margin-bottom: 20px;
+            text-align: center;
+            color: #FFEB3B;
+            text-shadow: 3px 3px 0 #388E3C;
+        }
+
+        p {
+            font-size: 1.2rem;
+            margin-bottom: 30px;
+            text-align: center;
+            line-height: 1.5;
+            max-width: 80%;
+        }
+
+        .btn {
+            background: linear-gradient(to bottom, #8BC34A, #388E3C);
+            border: none;
+            padding: 15px 40px;
+            color: white;
+            font-size: 1.5rem;
+            border-radius: 50px;
+            cursor: pointer;
+            box-shadow: 0 5px 0 #1B5E20;
+            transition: transform 0.1s;
+        }
+
+        .btn:active {
+            transform: translateY(5px);
+            box-shadow: none;
+        }
+
+        .controls-hint {
+            position: absolute;
+            bottom: 50px;
+            width: 100%;
+            text-align: center;
+            font-size: 1rem;
+            color: rgba(0, 0, 0, 0.5);
+            pointer-events: none;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0% {
+                opacity: 0.5;
+            }
+
+            50% {
+                opacity: 1;
+            }
+
+            100% {
+                opacity: 0.5;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div id="game-container">
+        <canvas id="gameCanvas"></canvas>
+
+        <div id="ui-layer">
+            <div class="hud">
+                <div class="score-box">层数: <span id="score">0</span></div>
+                <div class="time-box">时间: <span id="time">60</span>s</div>
+            </div>
+
+            <div class="controls-hint" id="controls-hint">
+                ← 点击左侧 | 点击右侧 →
+            </div>
+        </div>
+
+        <div id="start-screen">
+            <h1>🌴 芭蕉登天</h1>
+            <p>点击屏幕左右两侧控制跳跃方向。<br>跳到芭蕉叶上继续攀登！<br>限时60秒。</p>
+            <button class="btn" id="start-btn">开始攀登</button>
+            <div style="margin-top:20px; font-size: 0.8em; opacity: 0.8;">
+                <a href="/" style="color:white; text-decoration: none;">&lt; 返回主页</a>
+            </div>
+        </div>
+
+        <div id="game-over-screen" class="hidden">
+            <h1>时间到!</h1>
+            <p>你攀登了 <span id="final-score" style="color: #FFEB3B; font-weight: bold;">0</span> 层</p>
+            <button class="btn" id="restart-btn">再玩一次</button>
+            <div style="margin-top:20px; font-size: 0.8em; opacity: 0.8;">
+                <a href="/" style="color:white; text-decoration: none;">&lt; 返回主页</a>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        /**
+         * Game Configuration
+         */
+        const CONFIG = {
+            GAME_DURATION: 60,
+            GRAVITY: 0.8,
+            JUMP_FORCE: -18,
+            FLOOR_HEIGHT: 180,
+            TRUNK_WIDTH: 60,
+            LEAF_WIDTH: 200,
+            LEAF_HEIGHT: 60,
+            LEAF_OFFSET_X: 140,
+            PLAYER_SIZE: 40
+        };
+
+        const ASSETS = {
+            COLORS: {
+                TRUNK: '#8B4513',
+                TRUNK_DARK: '#654321',
+                TRUNK_RING: '#A0522D',
+                LEAF_MAIN: '#228B22',
+                LEAF_LIGHT: '#32CD32',
+                LEAF_DARK: '#006400',
+                LEAF_VEIN: '#1a6b1a',
+                PLAYER: '#FF6B35',
+                PLAYER_FACE: '#FFE4C4',
+                SKY_TOP: '#87CEEB',
+                SKY_BOTTOM: '#E0F7FA',
+                CLOUD: 'rgba(255, 255, 255, 0.6)'
+            }
+        };
+
+        class Utils {
+            static lerp(start, end, amt) {
+                return (1 - amt) * start + amt * end;
+            }
+            static clamp(val, min, max) {
+                return Math.max(min, Math.min(max, val));
+            }
+        }
+
+        /**
+         * Player with physics-based jumping
+         */
+        class Player {
+            constructor(game) {
+                this.game = game;
+                this.reset();
+            }
+
+            reset() {
+                this.floor = 0;
+                this.side = 0;
+                this.x = 0;
+                this.y = 0;
+                this.vx = 0;
+                this.vy = 0;
+                this.isJumping = false;
+                this.isFalling = false;
+                this.facing = 1;
+                this.rotation = 0;
+                this.targetFloor = 0;
+                this.jumpDirection = 0;
+                // Squash and stretch
+                this.scaleX = 1;
+                this.scaleY = 1;
+                this.landingImpact = 0;
+            }
+
+            getWorldY(floor) {
+                return -floor * CONFIG.FLOOR_HEIGHT;
+            }
+
+            getWorldX(side) {
+                return side * CONFIG.LEAF_OFFSET_X;
+            }
+
+            jump(direction) {
+                if (this.isJumping || this.isFalling || this.game.state !== 'PLAYING') return;
+
+                this.isJumping = true;
+                this.jumpDirection = direction;
+                this.facing = direction;
+                this.targetFloor = this.floor + 1;
+
+                // Start position
+                this.startX = this.x;
+                this.startY = this.y;
+
+                // Target position
+                this.targetX = direction * CONFIG.LEAF_OFFSET_X;
+                this.targetY = this.getWorldY(this.targetFloor);
+
+                // Calculate proper parabolic trajectory
+                // We want to reach peak height midway, then fall to target
+                const dx = this.targetX - this.startX;
+                const dy = this.targetY - this.startY; // negative (going up)
+
+                // Peak height should be above the target
+                const peakHeight = Math.abs(dy) * 0.6; // Peak 60% above the vertical distance
+                const totalHeight = Math.abs(dy) + peakHeight;
+
+                // Calculate initial velocity needed to reach peak
+                // Using: v² = 2gh, so v = sqrt(2gh)
+                const g = CONFIG.GRAVITY;
+                this.vy = -Math.sqrt(2 * g * totalHeight);
+
+                // Calculate time to reach peak: t = v/g
+                const timeToPeak = Math.abs(this.vy) / g;
+
+                // Calculate time to fall from peak to target
+                // fall distance = peakHeight, using: d = 0.5*g*t², so t = sqrt(2d/g)
+                const timeToFall = Math.sqrt(2 * peakHeight / g);
+
+                // Total time
+                const totalTime = timeToPeak + timeToFall;
+
+                // Horizontal velocity to cover dx in totalTime frames
+                this.vx = dx / totalTime;
+
+                // Stretch effect at jump start
+                this.scaleX = 0.7;
+                this.scaleY = 1.4;
+
+                this.game.playSound('jump');
+            }
+
+            update() {
+                if (this.isJumping) {
+                    // Apply gravity
+                    this.vy += CONFIG.GRAVITY;
+                    this.x += this.vx;
+                    this.y += this.vy;
+
+                    // Rotation during jump (tilt in direction of movement)
+                    this.rotation = this.facing * Math.min(Math.abs(this.vy) * 0.02, 0.3);
+
+                    // Stretch effect during flight
+                    if (this.vy < 0) {
+                        // Going up - stretch vertically
+                        this.scaleX = Utils.lerp(this.scaleX, 0.85, 0.1);
+                        this.scaleY = Utils.lerp(this.scaleY, 1.15, 0.1);
+                    } else {
+                        // Falling down - prepare for impact
+                        this.scaleX = Utils.lerp(this.scaleX, 1.1, 0.1);
+                        this.scaleY = Utils.lerp(this.scaleY, 0.9, 0.1);
+                    }
+
+                    // Check landing
+                    const correctDirection = this.game.beanstalk.getLeafDirection(this.targetFloor);
+
+                    if (this.vy > 0 && this.y >= this.targetY) {
+                        // Descending and reached target height
+                        if (this.jumpDirection === correctDirection) {
+                            // Success! Land on new leaf
+                            this.floor = this.targetFloor;
+                            this.side = this.jumpDirection;
+                            this.x = this.targetX;
+                            this.y = this.targetY;
+                            this.vx = 0;
+                            this.vy = 0;
+                            this.isJumping = false;
+                            this.rotation = 0;
+
+                            // Landing squash effect
+                            this.scaleX = 1.5;
+                            this.scaleY = 0.5;
+                            this.landingImpact = 1;
+
+                            // Trigger leaf bounce
+                            this.game.beanstalk.triggerBounce(this.floor, this.side);
+                            this.game.addScore();
+                            this.game.playSound('land');
+                        } else {
+                            // Missed! Start falling
+                            this.isJumping = false;
+                            this.isFalling = true;
+                            this.vy = 2; // Initial fall velocity
+                            this.game.playSound('miss');
+                        }
+                    }
+                } else if (this.isFalling) {
+                    // Apply gravity while falling
+                    this.vy += CONFIG.GRAVITY;
+                    this.y += this.vy;
+                    this.rotation += 0.1 * this.facing;
+
+                    // Find the next leaf below in the jump direction
+                    let landFloor = this.floor;
+                    for (let f = this.floor; f >= 0; f--) {
+                        const dir = this.game.beanstalk.getLeafDirection(f);
+                        if (dir === this.jumpDirection || dir === 0) {
+                            landFloor = f;
+                            break;
+                        }
+                    }
+
+                    const landY = this.getWorldY(landFloor);
+                    const landX = this.jumpDirection * CONFIG.LEAF_OFFSET_X;
+
+                    if (this.y >= landY) {
+                        // Land on lower leaf
+                        this.floor = landFloor;
+                        this.side = this.jumpDirection;
+                        this.x = landX;
+                        this.y = landY;
+                        this.vx = 0;
+                        this.vy = 0;
+                        this.isFalling = false;
+                        this.rotation = 0;
+                        // Landing squash effect
+                        this.scaleX = 1.5;
+                        this.scaleY = 0.5;
+                        this.landingImpact = 1;
+                        // Trigger leaf bounce
+                        this.game.beanstalk.triggerBounce(landFloor, this.jumpDirection);
+                        this.game.playSound('land');
+                    }
+                } else {
+                    // Idle on leaf - slight bobbing
+                    this.rotation = Math.sin(Date.now() / 500) * 0.02;
+                    // Recover from squash
+                    this.scaleX = Utils.lerp(this.scaleX, 1, 0.15);
+                    this.scaleY = Utils.lerp(this.scaleY, 1, 0.15);
+                    this.landingImpact = Utils.lerp(this.landingImpact, 0, 0.1);
+                }
+            }
+
+            draw(ctx, centerX, centerY) {
+                const drawX = centerX + this.x;
+                const drawY = centerY + this.y;
+
+                ctx.save();
+                ctx.translate(drawX, drawY + this.landingImpact * 5);
+                ctx.rotate(this.rotation);
+                ctx.scale(this.scaleX, this.scaleY);
+
+                const size = CONFIG.PLAYER_SIZE;
+
+                // Shadow
+                ctx.fillStyle = 'rgba(0,0,0,0.2)';
+                ctx.beginPath();
+                ctx.ellipse(0, 5, size * 0.6, size * 0.2, 0, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Body
+                ctx.fillStyle = ASSETS.COLORS.PLAYER;
+                ctx.beginPath();
+                ctx.arc(0, -size / 2, size / 2, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Face
+                ctx.fillStyle = ASSETS.COLORS.PLAYER_FACE;
+                ctx.beginPath();
+                ctx.arc(this.facing * 5, -size / 2 - 5, size / 3, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Eyes
+                ctx.fillStyle = '#000';
+                ctx.beginPath();
+                ctx.arc(this.facing * 8, -size / 2 - 8, 4, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Eye shine
+                ctx.fillStyle = '#FFF';
+                ctx.beginPath();
+                ctx.arc(this.facing * 9, -size / 2 - 10, 2, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Mouth
+                ctx.strokeStyle = '#000';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                if (this.isJumping || this.isFalling) {
+                    ctx.arc(this.facing * 6, -size / 2, 5, 0, Math.PI);
+                } else {
+                    ctx.arc(this.facing * 6, -size / 2 + 2, 4, 0.2, Math.PI - 0.2);
+                }
+                ctx.stroke();
+
+                ctx.restore();
+            }
+        }
+
+        /**
+         * Banana Tree (芭蕉树)
+         */
+        class BananaTree {
+            constructor() {
+                this.leaves = [];
+                // Leaf bounce physics: Map of "floor_direction" -> {offset, velocity, rotation}
+                this.leafBounce = new Map();
+            }
+
+            reset() {
+                this.leaves = [];
+                this.leaves.push(0); // Floor 0: both sides
+                this.generate(200);
+                this.leafBounce.clear();
+            }
+
+            // Trigger bounce animation when player lands
+            triggerBounce(floor, direction) {
+                const key = `${floor}_${direction}`;
+                this.leafBounce.set(key, {
+                    offset: 15,      // Initial downward displacement
+                    velocity: -8,    // Initial upward velocity (spring back)
+                    rotation: direction * 0.15,  // Initial rotation
+                    rotVelocity: direction * -0.3
+                });
+            }
+
+            // Update all leaf bounce animations
+            updateBounce() {
+                for (const [key, bounce] of this.leafBounce.entries()) {
+                    // Spring physics
+                    const springK = 0.3;
+                    const damping = 0.85;
+
+                    // Update offset
+                    bounce.velocity += -bounce.offset * springK;
+                    bounce.velocity *= damping;
+                    bounce.offset += bounce.velocity;
+
+                    // Update rotation
+                    bounce.rotVelocity += -bounce.rotation * springK;
+                    bounce.rotVelocity *= damping;
+                    bounce.rotation += bounce.rotVelocity;
+
+                    // Remove if settled
+                    if (Math.abs(bounce.offset) < 0.1 && Math.abs(bounce.velocity) < 0.1) {
+                        this.leafBounce.delete(key);
+                    }
+                }
+            }
+
+            getBounce(floor, direction) {
+                const key = `${floor}_${direction}`;
+                return this.leafBounce.get(key) || { offset: 0, velocity: 0, rotation: 0 };
+            }
+
+            generate(count) {
+                for (let i = 0; i < count; i++) {
+                    const dir = Math.random() < 0.5 ? -1 : 1;
+                    this.leaves.push(dir);
+                }
+            }
+
+            getLeafDirection(floorIndex) {
+                if (floorIndex >= this.leaves.length) {
+                    this.generate(50);
+                }
+                return this.leaves[floorIndex];
+            }
+
+            draw(ctx, centerX, centerY, cameraY, playerFloor) {
+                // Draw trunk
+                this.drawTrunk(ctx, centerX, centerY, cameraY);
+
+                // Only draw current floor leaf and next floor leaf
+                const floorsToShow = [playerFloor, playerFloor + 1];
+
+                for (const floor of floorsToShow) {
+                    if (floor < 0) continue;
+                    const dir = this.getLeafDirection(floor);
+                    if (dir === 0) {
+                        this.drawBananaLeaf(ctx, centerX, centerY, floor, -1);
+                        this.drawBananaLeaf(ctx, centerX, centerY, floor, 1);
+                    } else {
+                        this.drawBananaLeaf(ctx, centerX, centerY, floor, dir);
+                    }
+                }
+            }
+
+            drawTrunk(ctx, centerX, centerY, cameraY) {
+                const w = CONFIG.TRUNK_WIDTH;
+                const visibleTop = centerY - cameraY - ctx.canvas.height;
+                const visibleHeight = ctx.canvas.height * 3;
+
+                // Main trunk
+                const gradient = ctx.createLinearGradient(centerX - w / 2, 0, centerX + w / 2, 0);
+                gradient.addColorStop(0, ASSETS.COLORS.TRUNK_DARK);
+                gradient.addColorStop(0.3, ASSETS.COLORS.TRUNK);
+                gradient.addColorStop(0.7, ASSETS.COLORS.TRUNK);
+                gradient.addColorStop(1, ASSETS.COLORS.TRUNK_DARK);
+
+                ctx.fillStyle = gradient;
+                ctx.fillRect(centerX - w / 2, visibleTop, w, visibleHeight);
+
+                // Trunk rings/texture
+                ctx.strokeStyle = ASSETS.COLORS.TRUNK_RING;
+                ctx.lineWidth = 2;
+                const ringSpacing = 40;
+                const startRing = Math.floor(visibleTop / ringSpacing) * ringSpacing;
+
+                for (let y = startRing; y < visibleTop + visibleHeight; y += ringSpacing) {
+                    ctx.beginPath();
+                    ctx.moveTo(centerX - w / 2, y);
+                    ctx.quadraticCurveTo(centerX, y + 5, centerX + w / 2, y);
+                    ctx.stroke();
+                }
+            }
+
+            drawBananaLeaf(ctx, centerX, centerY, floorIndex, direction) {
+                // Get bounce physics for this leaf
+                const bounce = this.getBounce(floorIndex, direction);
+
+                const y = centerY - floorIndex * CONFIG.FLOOR_HEIGHT + bounce.offset;
+                const x = centerX + direction * (CONFIG.TRUNK_WIDTH / 2);
+
+                ctx.save();
+                ctx.translate(x, y);
+                ctx.rotate(bounce.rotation);
+                ctx.scale(direction, 1);
+
+                const leafLength = CONFIG.LEAF_WIDTH;
+                const leafWidth = CONFIG.LEAF_HEIGHT;
+
+                // Leaf stem
+                ctx.strokeStyle = ASSETS.COLORS.LEAF_DARK;
+                ctx.lineWidth = 8;
+                ctx.beginPath();
+                ctx.moveTo(0, 0);
+                ctx.quadraticCurveTo(leafLength * 0.3, -5, leafLength * 0.5, 0);
+                ctx.stroke();
+
+                // Main leaf shape
+                ctx.fillStyle = ASSETS.COLORS.LEAF_MAIN;
+                ctx.beginPath();
+                ctx.moveTo(10, 0);
+                // Top edge with natural curve
+                ctx.bezierCurveTo(
+                    leafLength * 0.3, -leafWidth * 0.6,
+                    leafLength * 0.7, -leafWidth * 0.5,
+                    leafLength, -leafWidth * 0.1
+                );
+                // Tip
+                ctx.quadraticCurveTo(leafLength + 10, 0, leafLength, leafWidth * 0.1);
+                // Bottom edge
+                ctx.bezierCurveTo(
+                    leafLength * 0.7, leafWidth * 0.5,
+                    leafLength * 0.3, leafWidth * 0.6,
+                    10, 0
+                );
+                ctx.fill();
+
+                // Light highlight
+                ctx.fillStyle = ASSETS.COLORS.LEAF_LIGHT;
+                ctx.globalAlpha = 0.3;
+                ctx.beginPath();
+                ctx.moveTo(20, -5);
+                ctx.bezierCurveTo(
+                    leafLength * 0.3, -leafWidth * 0.4,
+                    leafLength * 0.5, -leafWidth * 0.3,
+                    leafLength * 0.8, -leafWidth * 0.1
+                );
+                ctx.lineTo(leafLength * 0.7, 0);
+                ctx.bezierCurveTo(
+                    leafLength * 0.4, -leafWidth * 0.15,
+                    leafLength * 0.2, -leafWidth * 0.2,
+                    20, -5
+                );
+                ctx.fill();
+                ctx.globalAlpha = 1;
+
+                // Central vein
+                ctx.strokeStyle = ASSETS.COLORS.LEAF_VEIN;
+                ctx.lineWidth = 4;
+                ctx.beginPath();
+                ctx.moveTo(10, 0);
+                ctx.quadraticCurveTo(leafLength * 0.5, 0, leafLength - 5, 0);
+                ctx.stroke();
+
+                // Side veins
+                ctx.lineWidth = 2;
+                for (let i = 0; i < 6; i++) {
+                    const vx = 30 + i * 25;
+                    ctx.beginPath();
+                    ctx.moveTo(vx, 0);
+                    ctx.quadraticCurveTo(vx + 15, -leafWidth * 0.25, vx + 25, -leafWidth * 0.35);
+                    ctx.stroke();
+                    ctx.beginPath();
+                    ctx.moveTo(vx, 0);
+                    ctx.quadraticCurveTo(vx + 15, leafWidth * 0.25, vx + 25, leafWidth * 0.35);
+                    ctx.stroke();
+                }
+
+                ctx.restore();
+            }
+        }
+
+        /**
+         * Main Game Class
+         */
+        class Game {
+            constructor() {
+                this.canvas = document.getElementById('gameCanvas');
+                this.ctx = this.canvas.getContext('2d');
+
+                this.resize();
+                window.addEventListener('resize', () => this.resize());
+
+                this.player = new Player(this);
+                this.beanstalk = new BananaTree();
+
+                this.state = 'MENU';
+                this.score = 0;
+                this.timeLeft = CONFIG.GAME_DURATION;
+                this.lastTime = 0;
+                this.cameraY = 0;
+
+                this.ui = {
+                    score: document.getElementById('score'),
+                    time: document.getElementById('time'),
+                    startScreen: document.getElementById('start-screen'),
+                    gameOverScreen: document.getElementById('game-over-screen'),
+                    finalScore: document.getElementById('final-score'),
+                    controlsHint: document.getElementById('controls-hint')
+                };
+
+                this.clouds = [];
+                for (let i = 0; i < 12; i++) {
+                    this.clouds.push({
+                        x: Math.random() * this.width,
+                        y: Math.random() * this.height * 2,
+                        size: Math.random() * 60 + 40,
+                        speed: Math.random() * 0.3 + 0.1
+                    });
+                }
+
+                this.bindEvents();
+                this.loop(0);
+            }
+
+            resize() {
+                this.width = window.innerWidth;
+                this.height = window.innerHeight;
+                this.canvas.width = this.width;
+                this.canvas.height = this.height;
+                this.centerX = this.width / 2;
+                this.centerY = this.height * 0.7;
+            }
+
+            bindEvents() {
+                window.addEventListener('pointerdown', (e) => {
+                    if (this.state !== 'PLAYING') return;
+                    if (e.target.tagName === 'BUTTON' || e.target.tagName === 'A') return;
+
+                    const halfWidth = window.innerWidth / 2;
+                    if (e.clientX < halfWidth) {
+                        this.player.jump(-1);
+                    } else {
+                        this.player.jump(1);
+                    }
+                });
+
+                window.addEventListener('keydown', (e) => {
+                    if (this.state !== 'PLAYING') return;
+                    if (e.code === 'ArrowLeft') this.player.jump(-1);
+                    if (e.code === 'ArrowRight') this.player.jump(1);
+                });
+
+                const startBtn = document.getElementById('start-btn');
+                const restartBtn = document.getElementById('restart-btn');
+                if (startBtn) startBtn.addEventListener('click', () => this.start());
+                if (restartBtn) restartBtn.addEventListener('click', () => this.start());
+            }
+
+            start() {
+                this.state = 'PLAYING';
+                this.score = 0;
+                this.timeLeft = CONFIG.GAME_DURATION;
+                this.cameraY = 0;
+                this.player.reset();
+                this.beanstalk.reset();
+                this.updateUI();
+
+                this.ui.startScreen.classList.add('hidden');
+                this.ui.gameOverScreen.classList.add('hidden');
+                this.ui.controlsHint.classList.remove('hidden');
+
+                if (this.timerInterval) clearInterval(this.timerInterval);
+                this.timerInterval = setInterval(() => {
+                    if (this.state === 'PLAYING') {
+                        this.timeLeft--;
+                        this.updateUI();
+                        if (this.timeLeft <= 0) {
+                            this.gameOver();
+                        }
+                    }
+                }, 1000);
+            }
+
+            gameOver() {
+                this.state = 'GAMEOVER';
+                this.ui.finalScore.textContent = this.score;
+                this.ui.gameOverScreen.classList.remove('hidden');
+                clearInterval(this.timerInterval);
+                this.playSound('gameover');
+            }
+
+            addScore() {
+                this.score++;
+                this.updateUI();
+            }
+
+            updateUI() {
+                this.ui.score.textContent = this.score;
+                this.ui.time.textContent = this.timeLeft;
+            }
+
+            update(dt) {
+                if (this.state === 'PLAYING') {
+                    this.player.update();
+                    this.beanstalk.updateBounce();
+
+                    // Camera smoothly follows player
+                    const targetCameraY = -this.player.y;
+                    this.cameraY = Utils.lerp(this.cameraY, targetCameraY, 0.08);
+                }
+
+                // Update clouds
+                this.clouds.forEach(cloud => {
+                    cloud.y += cloud.speed;
+                    if (cloud.y > this.height + 100) cloud.y = -100;
+                });
+            }
+
+            draw() {
+                // Background gradient
+                const gradient = this.ctx.createLinearGradient(0, 0, 0, this.height);
+                gradient.addColorStop(0, ASSETS.COLORS.SKY_TOP);
+                gradient.addColorStop(1, ASSETS.COLORS.SKY_BOTTOM);
+                this.ctx.fillStyle = gradient;
+                this.ctx.fillRect(0, 0, this.width, this.height);
+
+                // Clouds
+                this.ctx.fillStyle = ASSETS.COLORS.CLOUD;
+                this.clouds.forEach(cloud => {
+                    this.ctx.beginPath();
+                    this.ctx.arc(cloud.x, cloud.y + (this.cameraY * 0.1) % this.height, cloud.size, 0, Math.PI * 2);
+                    this.ctx.fill();
+                });
+
+                this.ctx.save();
+                this.ctx.translate(0, this.cameraY);
+
+                // Draw world
+                this.beanstalk.draw(this.ctx, this.centerX, this.centerY, this.cameraY, this.player.floor);
+                this.player.draw(this.ctx, this.centerX, this.centerY);
+
+                this.ctx.restore();
+            }
+
+            loop(timestamp) {
+                const dt = timestamp - this.lastTime;
+                this.lastTime = timestamp;
+
+                this.update(dt);
+                this.draw();
+
+                requestAnimationFrame((t) => this.loop(t));
+            }
+
+            playSound(type) {
+                try {
+                    const AudioContext = window.AudioContext || window.webkitAudioContext;
+                    if (!AudioContext) return;
+                    const ctx = new AudioContext();
+                    const osc = ctx.createOscillator();
+                    const gain = ctx.createGain();
+                    osc.connect(gain);
+                    gain.connect(ctx.destination);
+
+                    if (type === 'jump') {
+                        osc.frequency.setValueAtTime(300, ctx.currentTime);
+                        osc.frequency.exponentialRampToValueAtTime(500, ctx.currentTime + 0.15);
+                        gain.gain.setValueAtTime(0.15, ctx.currentTime);
+                        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.15);
+                        osc.start();
+                        osc.stop(ctx.currentTime + 0.15);
+                    } else if (type === 'miss') {
+                        osc.frequency.setValueAtTime(250, ctx.currentTime);
+                        osc.frequency.exponentialRampToValueAtTime(80, ctx.currentTime + 0.3);
+                        osc.type = 'sawtooth';
+                        gain.gain.setValueAtTime(0.1, ctx.currentTime);
+                        gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.3);
+                        osc.start();
+                        osc.stop(ctx.currentTime + 0.3);
+                    } else if (type === 'land') {
+                        // Satisfying landing thump
+                        osc.frequency.setValueAtTime(150, ctx.currentTime);
+                        osc.frequency.exponentialRampToValueAtTime(60, ctx.currentTime + 0.1);
+                        osc.type = 'sine';
+                        gain.gain.setValueAtTime(0.2, ctx.currentTime);
+                        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.15);
+                        osc.start();
+                        osc.stop(ctx.currentTime + 0.15);
+                    }
+                } catch (e) {
+                    // ignore audio errors
+                }
+            }
+        }
+
+        window.onload = () => {
+            new Game();
+        };
+    </script>
+</body>
+
+</html>

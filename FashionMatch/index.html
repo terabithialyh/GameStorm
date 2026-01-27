@@ -115,8 +115,46 @@
         designHeight: 1920,
         colors: ['#FFC3A0', '#FF677D', '#D4A5A5', '#392F5A', '#31A2AC'], // 调试用背景色
         // 使用 Emoji 作为欧美女性向风格的图标
-        icons: ['💄', '👠', '💎', '👜', '🎀', '🧁'] 
+        icons: ['💄', '👠', '💎', '👜', '🎀', '🧁']
     };
+
+    // Easing functions for smooth animations
+    const Easing = {
+        // For smooth drops with bounce
+        easeOutBounce: (t) => {
+            if (t < 1 / 2.75) {
+                return 7.5625 * t * t;
+            } else if (t < 2 / 2.75) {
+                return 7.5625 * (t -= 1.5 / 2.75) * t + 0.75;
+            } else if (t < 2.5 / 2.75) {
+                return 7.5625 * (t -= 2.25 / 2.75) * t + 0.9375;
+            } else {
+                return 7.5625 * (t -= 2.625 / 2.75) * t + 0.984375;
+            }
+        },
+
+        // For swap animations
+        easeInOutQuad: (t) => {
+            return t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
+        },
+
+        // For fade-out effects
+        easeOutCubic: (t) => {
+            return (--t) * t * t + 1;
+        },
+
+        // For pop-in effects
+        easeOutBack: (t) => {
+            const c1 = 1.70158;
+            const c3 = c1 + 1;
+            return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
+        }
+    };
+
+    // Linear interpolation helper
+    function lerp(start, end, t) {
+        return start + (end - start) * t;
+    }
 
     class Game {
         constructor() {
@@ -132,6 +170,7 @@
             this.score = 0;
             this.selectedTile = null;
             this.isProcessing = false; // 动画/处理中锁
+            this.particles = []; // 粒子系统
 
             // 计算网格在画布中的居中位置
             this.gridWidth = CONFIG.cols * CONFIG.tileSize;
@@ -166,7 +205,17 @@
                         x: c * CONFIG.tileSize,
                         y: r * CONFIG.tileSize,
                         alpha: 1,
-                        offsetY: 0 // 用于下落动画
+                        offsetY: 0,
+                        offsetX: 0,
+                        // Animation properties
+                        targetY: 0,
+                        targetAlpha: undefined,
+                        targetScale: undefined,
+                        scale: 1,
+                        animating: false,
+                        animationProgress: 0,
+                        animationDuration: 0,
+                        animationStartTime: 0
                     };
                 }
             }
@@ -234,57 +283,165 @@
 
         async swapTiles(tile1, tile2) {
             this.isProcessing = true;
-            
-            // 交换数据
-            const tempType = this.grid[tile1.r][tile1.c].type;
-            this.grid[tile1.r][tile1.c].type = this.grid[tile2.r][tile2.c].type;
-            this.grid[tile2.r][tile2.c].type = tempType;
 
-            // 简单渲染一帧以显示交换结果
-            this.draw(); 
-            await this.sleep(200);
+            // Store original types
+            const type1 = this.grid[tile1.r][tile1.c].type;
+            const type2 = this.grid[tile2.r][tile2.c].type;
+
+            // Animate swap with visual feedback
+            await this.animateSwap(tile1, tile2);
+
+            // Actually swap data
+            this.grid[tile1.r][tile1.c].type = type2;
+            this.grid[tile2.r][tile2.c].type = type1;
+
+            await this.sleep(100);
 
             // 检查消除
             const matches = this.findMatches();
-            
+
             if (matches.length > 0) {
                 await this.processMatches(matches);
             } else {
-                // 交换失败，换回来
-                const tempTypeRevert = this.grid[tile1.r][tile1.c].type;
-                this.grid[tile1.r][tile1.c].type = this.grid[tile2.r][tile2.c].type;
-                this.grid[tile2.r][tile2.c].type = tempTypeRevert;
+                // Swap failed - animate back
+                await this.animateSwap(tile1, tile2);
+                this.grid[tile1.r][tile1.c].type = type1;
+                this.grid[tile2.r][tile2.c].type = type2;
             }
-            
+
             this.isProcessing = false;
+        }
+
+        // Helper method for swap animation
+        async animateSwap(tile1, tile2) {
+            const duration = 250;
+            const startTime = Date.now();
+
+            // Calculate offsets
+            const dx1 = (tile2.c - tile1.c) * CONFIG.tileSize;
+            const dy1 = (tile2.r - tile1.r) * CONFIG.tileSize;
+            const dx2 = -dx1;
+            const dy2 = -dy1;
+
+            // Animate
+            while (Date.now() - startTime < duration) {
+                const progress = (Date.now() - startTime) / duration;
+                const eased = Easing.easeInOutQuad(progress);
+
+                this.grid[tile1.r][tile1.c].offsetX = dx1 * eased;
+                this.grid[tile1.r][tile1.c].offsetY = dy1 * eased;
+                this.grid[tile2.r][tile2.c].offsetX = dx2 * eased;
+                this.grid[tile2.r][tile2.c].offsetY = dy2 * eased;
+
+                await this.sleep(16); // ~60fps
+            }
+
+            // Reset offsets
+            this.grid[tile1.r][tile1.c].offsetX = 0;
+            this.grid[tile1.r][tile1.c].offsetY = 0;
+            this.grid[tile2.r][tile2.c].offsetX = 0;
+            this.grid[tile2.r][tile2.c].offsetY = 0;
+        }
+
+        // Create particle explosion effect
+        createExplosion(row, col, tileType) {
+            const centerX = this.offsetX + col * CONFIG.tileSize + CONFIG.tileSize / 2;
+            const centerY = this.offsetY + row * CONFIG.tileSize + CONFIG.tileSize / 2;
+            const particleCount = 15;
+            const colors = ['#FF6B9D', '#FEC3A6', '#FFD93D', '#6BCF7F', '#A8E6CF', '#FF8B94'];
+
+            for (let i = 0; i < particleCount; i++) {
+                const angle = (Math.PI * 2 * i) / particleCount + Math.random() * 0.5;
+                const speed = 3 + Math.random() * 4;
+                const size = 8 + Math.random() * 12;
+
+                this.particles.push({
+                    x: centerX,
+                    y: centerY,
+                    vx: Math.cos(angle) * speed,
+                    vy: Math.sin(angle) * speed,
+                    size: size,
+                    alpha: 1,
+                    color: colors[Math.floor(Math.random() * colors.length)],
+                    life: 1,
+                    decay: 0.015 + Math.random() * 0.015,
+                    gravity: 0.15
+                });
+            }
+        }
+
+        // Update and draw particles
+        updateParticles() {
+            for (let i = this.particles.length - 1; i >= 0; i--) {
+                const p = this.particles[i];
+
+                // Update position
+                p.x += p.vx;
+                p.y += p.vy;
+                p.vy += p.gravity; // Apply gravity
+
+                // Update life
+                p.life -= p.decay;
+                p.alpha = p.life;
+
+                // Remove dead particles
+                if (p.life <= 0) {
+                    this.particles.splice(i, 1);
+                    continue;
+                }
+
+                // Draw particle
+                this.ctx.save();
+                this.ctx.globalAlpha = p.alpha;
+                this.ctx.fillStyle = p.color;
+                this.ctx.beginPath();
+                this.ctx.arc(p.x, p.y, p.size * p.life, 0, Math.PI * 2);
+                this.ctx.fill();
+                this.ctx.restore();
+            }
         }
 
         async processMatches(matches) {
             // 1. 消除逻辑
             let multiplier = 1;
             while (matches.length > 0) {
-                // 标记消除
+                // Start fade-out and shrink animation for matched tiles
                 for (let m of matches) {
-                    this.grid[m.r][m.c].type = -1; // -1 代表空
+                    const tile = this.grid[m.r][m.c];
+
+                    // Create explosion effect
+                    this.createExplosion(m.r, m.c, tile.type);
+
+                    tile.animating = true;
+                    tile.targetAlpha = 0;
+                    tile.targetScale = 0;
+                    tile.animationProgress = 0;
+                    tile.animationDuration = 300;
+                    tile.animationStartTime = Date.now();
                 }
-                
+
+                // Wait for fade-out animation to complete
+                await this.sleep(350);
+
+                // Now actually remove tiles
+                for (let m of matches) {
+                    this.grid[m.r][m.c].type = -1;
+                    this.grid[m.r][m.c].alpha = 1;
+                    this.grid[m.r][m.c].scale = 1;
+                }
+
                 // 加分
                 this.score += matches.length * 10 * multiplier;
                 this.updateScoreUI();
                 multiplier++;
 
-                this.draw();
-                await this.sleep(300);
-
                 // 2. 下落逻辑
                 this.applyGravity();
-                this.draw();
-                await this.sleep(300);
+                await this.waitForAnimations();
 
                 // 3. 填充新块
                 this.fillEmpty();
-                this.draw();
-                await this.sleep(200);
+                await this.waitForAnimations();
 
                 // 4. 再次检查
                 matches = this.findMatches();
@@ -292,26 +449,71 @@
         }
 
         applyGravity() {
+            let hasMovement = false;
+
             for (let c = 0; c < CONFIG.cols; c++) {
                 let emptySlots = 0;
                 for (let r = CONFIG.rows - 1; r >= 0; r--) {
                     if (this.grid[r][c].type === -1) {
                         emptySlots++;
                     } else if (emptySlots > 0) {
-                        // 移动当前块到下面的空位
-                        this.grid[r + emptySlots][c].type = this.grid[r][c].type;
+                        // Calculate drop distance
+                        const targetRow = r + emptySlots;
+                        const dropDistance = emptySlots * CONFIG.tileSize;
+
+                        // Move tile data
+                        this.grid[targetRow][c].type = this.grid[r][c].type;
+                        this.grid[targetRow][c].scale = this.grid[r][c].scale;
+
+                        // Set up drop animation
+                        this.grid[targetRow][c].offsetY = -dropDistance;
+                        this.grid[targetRow][c].targetY = 0;
+                        this.grid[targetRow][c].animating = true;
+                        this.grid[targetRow][c].animationProgress = 0;
+                        this.grid[targetRow][c].animationDuration = 400 + emptySlots * 50;
+                        this.grid[targetRow][c].animationStartTime = Date.now();
+
+                        // Clear source
                         this.grid[r][c].type = -1;
+                        hasMovement = true;
                     }
                 }
             }
+
+            return hasMovement;
         }
 
         fillEmpty() {
-            for (let r = 0; r < CONFIG.rows; r++) {
-                for (let c = 0; c < CONFIG.cols; c++) {
+            // Count empty slots in each column and spawn from top
+            for (let c = 0; c < CONFIG.cols; c++) {
+                let emptyCount = 0;
+                let emptyPositions = [];
+
+                // Find all empty positions in this column
+                for (let r = 0; r < CONFIG.rows; r++) {
                     if (this.grid[r][c].type === -1) {
-                        this.grid[r][c].type = Math.floor(Math.random() * CONFIG.icons.length);
+                        emptyCount++;
+                        emptyPositions.push(r);
                     }
+                }
+
+                // Spawn new tiles from above and drop them down
+                for (let i = 0; i < emptyCount; i++) {
+                    const targetRow = emptyPositions[i];
+                    const dropDistance = (targetRow + 1 + i) * CONFIG.tileSize;
+
+                    // Spawn new tile
+                    this.grid[targetRow][c].type = Math.floor(Math.random() * CONFIG.icons.length);
+
+                    // Drop animation from above the grid
+                    this.grid[targetRow][c].offsetY = -dropDistance;
+                    this.grid[targetRow][c].targetY = 0;
+                    this.grid[targetRow][c].scale = 1;
+                    this.grid[targetRow][c].alpha = 1;
+                    this.grid[targetRow][c].animating = true;
+                    this.grid[targetRow][c].animationProgress = 0;
+                    this.grid[targetRow][c].animationDuration = 400 + dropDistance / CONFIG.tileSize * 50;
+                    this.grid[targetRow][c].animationStartTime = Date.now();
                 }
             }
         }
@@ -359,6 +561,23 @@
             return new Promise(resolve => setTimeout(resolve, ms));
         }
 
+        async waitForAnimations() {
+            while (true) {
+                let hasAnimating = false;
+                for (let r = 0; r < CONFIG.rows; r++) {
+                    for (let c = 0; c < CONFIG.cols; c++) {
+                        if (this.grid[r][c].animating) {
+                            hasAnimating = true;
+                            break;
+                        }
+                    }
+                    if (hasAnimating) break;
+                }
+                if (!hasAnimating) break;
+                await this.sleep(16);
+            }
+        }
+
         draw() {
             // 清空画布
             this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
@@ -368,14 +587,70 @@
             this.ctx.roundRect(this.offsetX - 20, this.offsetY - 20, this.gridWidth + 40, this.gridHeight + 40, 40);
             this.ctx.fill();
 
+            // Update animations
+            const now = Date.now();
+            for (let r = 0; r < CONFIG.rows; r++) {
+                for (let c = 0; c < CONFIG.cols; c++) {
+                    let tile = this.grid[r][c];
+                    if (tile.animating) {
+                        const elapsed = now - tile.animationStartTime;
+                        const progress = Math.min(elapsed / tile.animationDuration, 1);
+
+                        // Apply easing for offsetY (drop animation)
+                        if (tile.offsetY !== tile.targetY) {
+                            const easedProgress = Easing.easeOutBounce(progress);
+                            tile.offsetY = lerp(tile.offsetY, tile.targetY, easedProgress);
+                        }
+
+                        // Interpolate alpha (for fade effects)
+                        if (tile.targetAlpha !== undefined) {
+                            tile.alpha = lerp(tile.alpha, tile.targetAlpha, Easing.easeOutCubic(progress));
+                        }
+
+                        // Interpolate scale (for shrink/pop effects)
+                        if (tile.targetScale !== undefined) {
+                            tile.scale = lerp(tile.scale, tile.targetScale, Easing.easeOutBack(progress));
+                        }
+
+                        // Complete animation
+                        if (progress >= 1) {
+                            tile.animating = false;
+                            tile.offsetY = tile.targetY;
+                            if (tile.targetAlpha !== undefined) {
+                                tile.alpha = tile.targetAlpha;
+                                tile.targetAlpha = undefined;
+                            }
+                            if (tile.targetScale !== undefined) {
+                                tile.scale = tile.targetScale;
+                                tile.targetScale = undefined;
+                            }
+                        }
+                    }
+                }
+            }
+
             // 绘制方块
             for (let r = 0; r < CONFIG.rows; r++) {
                 for (let c = 0; c < CONFIG.cols; c++) {
                     let tile = this.grid[r][c];
                     if (tile.type === -1) continue;
 
-                    let x = this.offsetX + c * CONFIG.tileSize;
-                    let y = this.offsetY + r * CONFIG.tileSize;
+                    let x = this.offsetX + c * CONFIG.tileSize + (tile.offsetX || 0);
+                    let y = this.offsetY + r * CONFIG.tileSize + (tile.offsetY || 0);
+
+                    // Apply alpha
+                    this.ctx.globalAlpha = tile.alpha;
+
+                    // Apply scale (center-based scaling)
+                    const scale = tile.scale || 1;
+                    if (scale !== 1) {
+                        this.ctx.save();
+                        const centerX = x + CONFIG.tileSize / 2;
+                        const centerY = y + CONFIG.tileSize / 2;
+                        this.ctx.translate(centerX, centerY);
+                        this.ctx.scale(scale, scale);
+                        this.ctx.translate(-centerX, -centerY);
+                    }
 
                     // 绘制方块背景（增加质感）
                     this.ctx.fillStyle = "rgba(255, 255, 255, 0.8)";
@@ -400,8 +675,19 @@
                     this.ctx.textBaseline = "middle";
                     this.ctx.shadowBlur = 0; // 文字不加阴影，保持清晰
                     this.ctx.fillText(CONFIG.icons[tile.type], x + CONFIG.tileSize/2, y + CONFIG.tileSize/2 + 10);
+
+                    // Restore context if scaled
+                    if (scale !== 1) {
+                        this.ctx.restore();
+                    }
+
+                    // Reset alpha
+                    this.ctx.globalAlpha = 1;
                 }
             }
+
+            // Draw particles (on top of tiles)
+            this.updateParticles();
 
             requestAnimationFrame(() => {}); // 保持循环钩子
         }

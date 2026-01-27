@@ -8,8 +8,9 @@ GameStorm is a collection of HTML5 mobile puzzle games built with vanilla JavaSc
 
 1. **Fashion Match** (时尚消消乐) - `FashionMatch/index.html` - Match-3 puzzle game
 2. **Merge2** (时尚逆袭：璀璨之星) - `Merge2/index.html` - Merge puzzle game
+3. **MagicBean** (魔豆登天) - `MagicBean/index.html` - Vertical platformer game
 
-Both games use a **single-file architecture** with no build system. All HTML, CSS, and JavaScript are contained in their respective `index.html` files.
+All games use a **single-file architecture** with no build system. All HTML, CSS, and JavaScript are contained in their respective `index.html` files.
 
 ## Development Commands
 
@@ -44,15 +45,15 @@ Server runs on http://localhost:8000 and serves:
 
 ### Two Different Approaches
 
-| Aspect | Fashion Match | Merge2 |
-|--------|--------------|--------|
-| **File** | `FashionMatch/index.html` (434 lines) | `Merge2/index.html` (799 lines) |
-| **Pattern** | Class-based OOP | Imperative + Functional modules |
-| **Rendering** | HTML5 Canvas 2D API | DOM manipulation |
-| **Animation** | Manual (requestAnimationFrame) | GSAP 3.12.2 library |
-| **Styling** | Inline CSS | Tailwind CSS (CDN) |
-| **Graphics** | Emoji characters | Inline SVG library |
-| **Grid** | 7×9 (63 cells) | 6×7 (42 cells) |
+| Aspect | Fashion Match | Merge2 | MagicBean |
+|--------|--------------|--------|-----------|
+| **File** | `FashionMatch/index.html` (434 lines) | `Merge2/index.html` (799 lines) | `MagicBean/index.html` |
+| **Pattern** | Class-based OOP | Imperative + Functional modules | Class-based OOP |
+| **Rendering** | HTML5 Canvas 2D API | DOM manipulation | HTML5 Canvas 2D API |
+| **Animation** | Manual (requestAnimationFrame) | GSAP 3.12.2 library | Mixed (Lerp + rAF) |
+| **Styling** | Inline CSS | Tailwind CSS (CDN) | Inline CSS |
+| **Graphics** | Emoji characters | Inline SVG library | HTML5 Canvas Shapes |
+| **Grid** | 7×9 (63 cells) | 6×7 (42 cells) | Infinite Vertical |
 
 ### Fashion Match Architecture
 
@@ -112,6 +113,27 @@ let state = {
 - `checkTaskCompletion()` - Scan grid for quest items
 - `showStory()` - Display narrative cutscenes
 
+- `checkTaskCompletion()` - Scan grid for quest items
+- `showStory()` - Display narrative cutscenes
+
+### MagicBean Architecture
+
+**Location:** `MagicBean/index.html`
+
+**Entry Point:** `window.onload` -> `new Game()`
+
+**Core Classes:**
+- `Game`: Main controller, loop, UI state
+- `Player`: Physics, jumping logic, stun state
+- `Beanstalk`: Procedural leaf generation
+- `Utils`: Helper functions (Lerp, random)
+
+**Key Mechanics:**
+- **Procedural Generation:** `Beanstalk.generate()` creates path ahead
+- **Input Handling:** Screen split into Left/Right touch zones
+- **Camera Logic:** Smoothly follows player height (`cameraY` lerp)
+- **Audio:** Web Audio API oscillator for simple generated SFX
+
 ## Making Changes
 
 ### Fashion Match
@@ -157,6 +179,21 @@ let state = {
 **Modify tasks:**
 - Edit `createTasks()` function (lines 677-750)
 - Task structure: `{ id, desc, targetLevel, targetCount, reward }`
+
+### MagicBean
+
+**File:** `MagicBean/index.html`
+
+**Adjust Difficulty:**
+- Modify `CONFIG` object:
+  - `GAME_DURATION`: Time limit (default 60s)
+  - `GRAVITY`: Fall speed (unused for climbing but used for visual)
+  - `STUN_DURATION`: Penalty time for missing jump (ms)
+  - `SCROLL_SPEED`: Camera smooting
+
+**Visuals:**
+- Update `ASSETS.COLORS` for theming
+- `Beanstalk.drawLeaf()` to change leaf shapes
 
 ### Navigation Page
 

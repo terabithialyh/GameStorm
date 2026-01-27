@@ -1,0 +1,707 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>跳跳芭蕉树 - Banana Jump</title>
+    <style>
+        :root {
+            --primary-green: #2E7D32;
+            --leaf-green: #7CB342;
+            --sky-blue: #B3E5FC;
+        }
+
+        body,
+        html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: var(--sky-blue);
+            font-family: 'Microsoft YaHei', sans-serif;
+            user-select: none;
+            touch-action: none;
+        }
+
+        #game-container {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            max-width: 500px;
+            margin: 0 auto;
+            box-shadow: 0 0 20px rgba(0, 0, 0, 0.2);
+        }
+
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(to bottom, #4FC3F7, #E1F5FE);
+        }
+
+        #ui-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            pointer-events: none;
+            padding: 20px;
+            box-sizing: border-box;
+            color: #1B5E20;
+            text-shadow: 1px 1px 2px rgba(255, 255, 255, 0.8);
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+        }
+
+        .stat-box {
+            background: rgba(255, 255, 255, 0.4);
+            padding: 10px 15px;
+            border-radius: 15px;
+            backdrop-filter: blur(5px);
+            border: 2px solid rgba(46, 125, 50, 0.3);
+        }
+
+        .stat-label {
+            font-size: 14px;
+            font-weight: bold;
+        }
+
+        .stat-value {
+            font-size: 24px;
+            font-weight: 900;
+        }
+
+        #overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.6);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            color: white;
+            z-index: 10;
+            text-align: center;
+        }
+
+        .btn {
+            background: #FFEB3B;
+            border: none;
+            padding: 15px 40px;
+            font-size: 24px;
+            color: #5D4037;
+            font-weight: bold;
+            border-radius: 30px;
+            cursor: pointer;
+            margin-top: 20px;
+            box-shadow: 0 5px 0 #FBC02D;
+            transition: transform 0.1s;
+            pointer-events: auto;
+        }
+
+        .btn:active {
+            transform: translateY(3px);
+            box-shadow: 0 2px 0 #FBC02D;
+        }
+
+        #message {
+            font-size: 18px;
+            margin: 10px 20px;
+            line-height: 1.5;
+        }
+
+        #touch-controls {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            pointer-events: auto;
+        }
+
+        .touch-zone {
+            flex: 1;
+            height: 100%;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div id="game-container">
+        <canvas id="gameCanvas"></canvas>
+
+        <div id="ui-layer">
+            <div class="stat-box">
+                <div class="stat-label">高度</div>
+                <div id="score" class="stat-value">0</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-label">剩余时间</div>
+                <div id="timer" class="stat-value">30s</div>
+            </div>
+        </div>
+
+        <div id="overlay">
+            <h1 id="title">萌宠芭蕉树</h1>
+            <div id="message">跳到芭蕉叶的中心！<br>点击左右，看它能跳多高？</div>
+            <button id="startBtn" class="btn">开始挑战</button>
+        </div>
+
+        <div id="touch-controls" style="display: none;">
+            <div class="touch-zone" id="leftZone"></div>
+            <div class="touch-zone" id="rightZone"></div>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const scoreEl = document.getElementById('score');
+        const timerEl = document.getElementById('timer');
+        const overlay = document.getElementById('overlay');
+        const startBtn = document.getElementById('startBtn');
+        const titleEl = document.getElementById('title');
+        const touchControls = document.getElementById('touch-controls');
+
+        // 核心计算：叶子中心位置 = 树干半宽 + 叶子半宽
+        const LEAF_CENTER_OFFSET = (60 / 2) + (150 / 2); // 30 + 75 = 105
+
+        const CONFIG = {
+            gameDuration: 30,
+            leafSpacing: 140,
+            gravity: 0.85,
+            jumpForce: 17,
+            beanstalkWidth: 60,
+            leafWidth: 150,
+            leafHeight: 60,
+            springStrength: 0.15,
+            friction: 0.85
+        };
+
+        let gameState = {
+            running: false,
+            score: 0,
+            timeLeft: CONFIG.gameDuration,
+            startTime: 0,
+            leaves: [],
+            playerY: 0,
+            playerX: 0,
+            velY: 0,
+            targetX: -LEAF_CENTER_OFFSET,
+            isJumping: false,
+            cameraY: 0,
+            lastTime: 0,
+            playerSquash: 1,
+            currentSide: 0
+        };
+
+        function initGame() {
+            gameState.score = 0;
+            gameState.timeLeft = CONFIG.gameDuration;
+            gameState.playerY = -CONFIG.leafSpacing; // 从地面开始（第一片叶子下方）
+            gameState.velY = 0;
+            gameState.isJumping = false;
+            gameState.cameraY = 0;
+            gameState.currentSide = Math.random() < 0.5 ? 0 : 1;
+            gameState.playerX = gameState.currentSide === 0 ? -LEAF_CENTER_OFFSET : LEAF_CENTER_OFFSET;
+            gameState.targetX = gameState.playerX;
+            gameState.leaves = [];
+            gameState.playerSquash = 1;
+
+            for (let i = 0; i < 500; i++) {
+                addLeaf(i);
+            }
+            gameState.leaves[0].side = gameState.currentSide;
+            updateUI();
+        }
+
+        function addLeaf(index) {
+            gameState.leaves.push({
+                y: index * CONFIG.leafSpacing,
+                side: Math.random() < 0.5 ? 0 : 1,
+                bend: 0,
+                bendVelocity: 0,
+                scale: 0
+            });
+        }
+
+        function resize() {
+            const container = canvas.parentElement;
+            canvas.width = container.clientWidth;
+            canvas.height = container.clientHeight;
+        }
+
+        window.addEventListener('resize', resize);
+        resize();
+
+        function handleInput(side) {
+            if (!gameState.running || gameState.isJumping) return;
+
+            gameState.isJumping = true;
+            gameState.velY = CONFIG.jumpForce;
+            gameState.playerSquash = 1.6;
+
+            const nextIndex = gameState.score + 1;
+            const targetLeaf = gameState.leaves[nextIndex];
+
+            gameState.currentSide = side;
+            gameState.targetX = side === 0 ? -LEAF_CENTER_OFFSET : LEAF_CENTER_OFFSET;
+
+            if (targetLeaf.side === side) {
+                gameState.score++;
+                if (gameState.leaves[gameState.score + 1]) {
+                    gameState.leaves[gameState.score + 1].bendVelocity = -12;
+                }
+            }
+        }
+
+        window.addEventListener('keydown', (e) => {
+            if (e.key === 'ArrowLeft') handleInput(0);
+            if (e.key === 'ArrowRight') handleInput(1);
+        });
+
+        document.getElementById('leftZone').addEventListener('pointerdown', (e) => { e.preventDefault(); handleInput(0); });
+        document.getElementById('rightZone').addEventListener('pointerdown', (e) => { e.preventDefault(); handleInput(1); });
+
+        startBtn.addEventListener('click', () => {
+            initGame();
+            overlay.style.display = 'none';
+            touchControls.style.display = 'flex';
+            gameState.running = true;
+            gameState.startTime = performance.now();
+            gameState.lastTime = performance.now();
+            requestAnimationFrame(gameLoop);
+        });
+
+        function updateUI() {
+            scoreEl.innerText = gameState.score;
+            timerEl.innerText = Math.ceil(Math.max(0, gameState.timeLeft)) + 's';
+        }
+
+        function gameOver() {
+            gameState.running = false;
+            overlay.style.display = 'flex';
+            touchControls.style.display = 'none';
+            titleEl.innerText = "挑战结束！";
+            document.getElementById('message').innerHTML = `你的小萌宠跳了 <span style="font-size:32px; color:#FBC02D;">${gameState.score}</span> 层<br>真是个灵活的小家伙！`;
+            startBtn.innerText = "再来一次";
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            const centerX = canvas.width / 2;
+            const groundY = canvas.height * 0.7;
+
+            const targetCamY = gameState.playerY;
+            gameState.cameraY += (targetCamY - gameState.cameraY) * 0.12;
+
+            ctx.save();
+            ctx.translate(0, gameState.cameraY);
+
+            // 1. 画地面
+            drawGround(ctx, centerX, groundY);
+
+            // 2. 画芭蕉树干
+            drawTrunk(ctx, centerX, groundY);
+
+            // 2. 画芭蕉叶
+            gameState.leaves.forEach((leaf, index) => {
+                if (index < gameState.score || index > gameState.score + 1) return;
+
+                const baseLy = groundY - leaf.y;
+                const ly = baseLy + leaf.bend;
+                // 叶柄位置（靠近树干）
+                const lx = leaf.side === 0 ? centerX - CONFIG.beanstalkWidth / 2 : centerX + CONFIG.beanstalkWidth / 2;
+                const appearanceScale = (index === gameState.score + 1) ? leaf.scale : 1;
+
+                drawBananaLeaf(ctx, lx, ly, CONFIG.leafWidth, CONFIG.leafHeight, leaf.side === 0, leaf.bend, appearanceScale);
+
+                ctx.fillStyle = `rgba(255,255,255,${appearanceScale * 0.8})`;
+                ctx.font = 'bold 16px Arial';
+                ctx.textAlign = 'center';
+                // 文字标在叶子中心上方
+                const textX = leaf.side === 0 ? lx - CONFIG.leafWidth / 2 : lx + CONFIG.leafWidth / 2;
+                ctx.fillText(index, textX, ly + 10);
+            });
+
+            // 3. 画可爱的卡通女孩
+            const currentLeafBend = gameState.leaves[gameState.score] ? gameState.leaves[gameState.score].bend : 0;
+            const playerRenderX = centerX + gameState.playerX;
+            const playerRenderY = groundY - gameState.playerY + (gameState.isJumping ? 0 : currentLeafBend);
+
+            drawCuteGirl(ctx, playerRenderX, playerRenderY, gameState.playerSquash, gameState.isJumping, gameState.targetX);
+
+            ctx.restore();
+        }
+
+        function drawCuteGirl(ctx, x, y, squash, isJumping, targetX) {
+            ctx.save();
+            ctx.translate(x, y);
+
+            // 应用 Q 弹的缩放
+            const squashValue = Math.max(0.2, squash);
+            ctx.scale(2 - squashValue, squashValue);
+
+            // 跳跃时的倾斜
+            if (isJumping) {
+                const tilt = 0.15;
+                ctx.rotate(targetX > 0 ? tilt : -tilt);
+            }
+
+            // 绘制阴影
+            ctx.fillStyle = 'rgba(0,0,0,0.2)';
+            ctx.beginPath();
+            ctx.ellipse(0, 2, 18, 5, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            // 绘制腿部
+            ctx.fillStyle = '#FFE0BD';
+            ctx.fillRect(-6, -15, 4, 12);
+            ctx.fillRect(2, -15, 4, 12);
+
+            // 绘制鞋子
+            ctx.fillStyle = '#FF69B4';
+            ctx.beginPath();
+            ctx.ellipse(-4, -3, 5, 3, 0, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.ellipse(4, -3, 5, 3, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            // 绘制裙子
+            ctx.fillStyle = '#FF1493';
+            ctx.beginPath();
+            ctx.moveTo(-12, -15);
+            ctx.lineTo(12, -15);
+            ctx.lineTo(10, -28);
+            ctx.lineTo(-10, -28);
+            ctx.closePath();
+            ctx.fill();
+
+            // 裙子装饰
+            ctx.fillStyle = '#FFB6C1';
+            for (let i = -8; i <= 8; i += 4) {
+                ctx.beginPath();
+                ctx.arc(i, -16, 2, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            // 绘制身体
+            ctx.fillStyle = '#FFF';
+            ctx.beginPath();
+            ctx.ellipse(0, -35, 10, 8, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            // 绘制手臂
+            ctx.strokeStyle = '#FFE0BD';
+            ctx.lineWidth = 4;
+            ctx.lineCap = 'round';
+
+            // 左手臂
+            ctx.beginPath();
+            ctx.moveTo(-8, -33);
+            if (isJumping) {
+                ctx.lineTo(-14, -40);
+            } else {
+                ctx.lineTo(-12, -30);
+            }
+            ctx.stroke();
+
+            // 右手臂
+            ctx.beginPath();
+            ctx.moveTo(8, -33);
+            if (isJumping) {
+                ctx.lineTo(14, -40);
+            } else {
+                ctx.lineTo(12, -30);
+            }
+            ctx.stroke();
+
+            // 绘制头部
+            ctx.fillStyle = '#FFE0BD';
+            ctx.beginPath();
+            ctx.arc(0, -45, 12, 0, Math.PI * 2);
+            ctx.fill();
+
+            // 绘制头发
+            ctx.fillStyle = '#8B4513';
+            ctx.beginPath();
+            ctx.arc(0, -48, 13, Math.PI, Math.PI * 2);
+            ctx.fill();
+
+            // 绘制刘海
+            ctx.beginPath();
+            ctx.moveTo(-10, -48);
+            ctx.quadraticCurveTo(-5, -52, 0, -50);
+            ctx.quadraticCurveTo(5, -52, 10, -48);
+            ctx.fill();
+
+            // 绘制双马尾
+            ctx.fillStyle = '#8B4513';
+            // 左马尾
+            ctx.beginPath();
+            ctx.ellipse(-12, -45, 5, 8, -0.3, 0, Math.PI * 2);
+            ctx.fill();
+            // 右马尾
+            ctx.beginPath();
+            ctx.ellipse(12, -45, 5, 8, 0.3, 0, Math.PI * 2);
+            ctx.fill();
+
+            // 绘制发饰
+            ctx.fillStyle = '#FF69B4';
+            ctx.beginPath();
+            ctx.arc(-12, -48, 3, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(12, -48, 3, 0, Math.PI * 2);
+            ctx.fill();
+
+            // 绘制眼睛
+            ctx.fillStyle = '#000';
+            ctx.beginPath();
+            ctx.arc(-4, -45, 2, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(4, -45, 2, 0, Math.PI * 2);
+            ctx.fill();
+
+            // 绘制眼睛高光
+            ctx.fillStyle = '#FFF';
+            ctx.beginPath();
+            ctx.arc(-3.5, -45.5, 1, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(4.5, -45.5, 1, 0, Math.PI * 2);
+            ctx.fill();
+
+            // 绘制腮红
+            ctx.fillStyle = 'rgba(255, 182, 193, 0.5)';
+            ctx.beginPath();
+            ctx.ellipse(-7, -42, 3, 2, 0, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.ellipse(7, -42, 3, 2, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            // 绘制微笑
+            ctx.strokeStyle = '#000';
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            ctx.arc(0, -42, 4, 0.2, Math.PI - 0.2);
+            ctx.stroke();
+
+            ctx.restore();
+        }
+
+        function drawGround(ctx, centerX, groundY) {
+            const groundHeight = 80;
+            const startY = groundY + CONFIG.leafSpacing;
+
+            // 绘制草地
+            const grassGrad = ctx.createLinearGradient(0, startY - groundHeight, 0, startY);
+            grassGrad.addColorStop(0, '#8BC34A');
+            grassGrad.addColorStop(0.5, '#7CB342');
+            grassGrad.addColorStop(1, '#689F38');
+            ctx.fillStyle = grassGrad;
+            ctx.fillRect(0, startY - groundHeight, canvas.width, groundHeight);
+
+            // 绘制土壤层
+            ctx.fillStyle = '#6D4C41';
+            ctx.fillRect(0, startY, canvas.width, 30);
+
+            // 绘制草丛装饰
+            ctx.fillStyle = '#9CCC65';
+            for (let i = 0; i < canvas.width; i += 20) {
+                const grassHeight = 15 + Math.sin(i * 0.5) * 5;
+                ctx.beginPath();
+                ctx.moveTo(i, startY - groundHeight);
+                ctx.lineTo(i + 5, startY - groundHeight - grassHeight);
+                ctx.lineTo(i + 10, startY - groundHeight);
+                ctx.fill();
+            }
+
+            // 绘制小花装饰
+            for (let i = 30; i < canvas.width; i += 60) {
+                const flowerX = i + Math.sin(i) * 10;
+                const flowerY = startY - groundHeight + 10;
+
+                // 花瓣
+                ctx.fillStyle = '#FFB6C1';
+                for (let j = 0; j < 5; j++) {
+                    const angle = (j * Math.PI * 2) / 5;
+                    ctx.beginPath();
+                    ctx.arc(
+                        flowerX + Math.cos(angle) * 4,
+                        flowerY + Math.sin(angle) * 4,
+                        3, 0, Math.PI * 2
+                    );
+                    ctx.fill();
+                }
+
+                // 花心
+                ctx.fillStyle = '#FFF59D';
+                ctx.beginPath();
+                ctx.arc(flowerX, flowerY, 2.5, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+
+        function drawTrunk(ctx, centerX, groundY) {
+            const w = CONFIG.beanstalkWidth;
+            const startY = -gameState.cameraY - 500;
+            const endY = canvas.height + 1000;
+
+            const grad = ctx.createLinearGradient(centerX - w / 2, 0, centerX + w / 2, 0);
+            grad.addColorStop(0, '#558B2F');
+            grad.addColorStop(0.3, '#7CB342');
+            grad.addColorStop(0.7, '#689F38');
+            grad.addColorStop(1, '#33691E');
+            ctx.fillStyle = grad;
+            ctx.fillRect(centerX - w / 2, startY, w, endY);
+
+            ctx.strokeStyle = 'rgba(0,0,0,0.1)';
+            ctx.lineWidth = 4;
+            for (let i = -20; i < 50; i++) {
+                let ty = (Math.floor(gameState.cameraY / 80) * 80) + i * 80;
+                ctx.beginPath();
+                ctx.moveTo(centerX - w / 2, groundY - ty);
+                ctx.bezierCurveTo(centerX, groundY - ty + 10, centerX, groundY - ty + 10, centerX + w / 2, groundY - ty);
+                ctx.stroke();
+            }
+        }
+
+        function drawBananaLeaf(ctx, x, y, w, h, isLeft, bend, scale) {
+            if (scale <= 0) return;
+            ctx.save();
+            ctx.translate(x, y);
+            ctx.scale(scale, scale);
+            ctx.rotate(bend * 0.008 * (isLeft ? 1 : -1));
+
+            // 绘制叶子主体
+            ctx.beginPath();
+            const leafGrad = ctx.createLinearGradient(0, 0, isLeft ? -w : w, h);
+            leafGrad.addColorStop(0, '#9CCC65');
+            leafGrad.addColorStop(0.5, '#7CB342');
+            leafGrad.addColorStop(1, '#558B2F');
+            ctx.fillStyle = leafGrad;
+
+            if (isLeft) {
+                ctx.moveTo(0, 0);
+                ctx.bezierCurveTo(-w * 0.3, -h * 1.5, -w, -h * 0.5, -w, h * 0.2);
+                ctx.bezierCurveTo(-w, h * 0.8, -w * 0.3, h * 1.2, 0, 0);
+            } else {
+                ctx.moveTo(0, 0);
+                ctx.bezierCurveTo(w * 0.3, -h * 1.5, w, -h * 0.5, w, h * 0.2);
+                ctx.bezierCurveTo(w, h * 0.8, w * 0.3, h * 1.2, 0, 0);
+            }
+            ctx.fill();
+
+            // 绘制主叶脉（中脉）
+            ctx.beginPath();
+            ctx.strokeStyle = '#AED581';
+            ctx.lineWidth = 3;
+            ctx.moveTo(0, 0);
+            if (isLeft) {
+                ctx.quadraticCurveTo(-w * 0.4, -h * 0.3, -w * 0.85, 0);
+            } else {
+                ctx.quadraticCurveTo(w * 0.4, -h * 0.3, w * 0.85, 0);
+            }
+            ctx.stroke();
+
+            // 绘制侧脉
+            ctx.strokeStyle = 'rgba(174, 213, 129, 0.6)';
+            ctx.lineWidth = 1.5;
+            for (let i = 1; i <= 8; i++) {
+                const ratio = i / 9;
+                ctx.beginPath();
+                if (isLeft) {
+                    const startX = -w * ratio * 0.85;
+                    const startY = -h * 0.3 * (1 - ratio * ratio);
+                    ctx.moveTo(startX, startY);
+                    ctx.lineTo(startX - w * 0.15, startY + h * 0.4);
+                } else {
+                    const startX = w * ratio * 0.85;
+                    const startY = -h * 0.3 * (1 - ratio * ratio);
+                    ctx.moveTo(startX, startY);
+                    ctx.lineTo(startX + w * 0.15, startY + h * 0.4);
+                }
+                ctx.stroke();
+            }
+
+            ctx.restore();
+        }
+
+        function gameLoop(time) {
+            if (!gameState.running) return;
+            const deltaTime = (time - gameState.lastTime) / 16.67;
+            gameState.lastTime = time;
+
+            if (gameState.isJumping) {
+                gameState.playerY += gameState.velY * deltaTime;
+                gameState.velY -= CONFIG.gravity * deltaTime;
+                const targetFloorY = gameState.score * CONFIG.leafSpacing;
+                if (gameState.velY < 0 && gameState.playerY <= targetFloorY) {
+                    // 判断是否落在当前侧边的叶子上
+                    const sideMatch = (gameState.playerX > 0 && gameState.leaves[gameState.score].side === 1) ||
+                        (gameState.playerX < 0 && gameState.leaves[gameState.score].side === 0);
+                    if (sideMatch) {
+                        gameState.playerY = targetFloorY;
+                        gameState.velY = 0;
+                        gameState.isJumping = false;
+                        gameState.playerSquash = 0.4;
+                        if (gameState.leaves[gameState.score]) {
+                            gameState.leaves[gameState.score].bendVelocity = 24;
+                        }
+                    } else if (gameState.score > 0) {
+                        gameState.score--;
+                        updateUI();
+                    } else {
+                        // 回到地面
+                        gameState.playerY = -CONFIG.leafSpacing;
+                        gameState.velY = 0;
+                        gameState.isJumping = false;
+                    }
+                }
+            }
+
+            gameState.playerX += (gameState.targetX - gameState.playerX) * 0.2 * deltaTime;
+            gameState.playerSquash += (1 - gameState.playerSquash) * 0.15 * deltaTime;
+
+            gameState.leaves.forEach((leaf, idx) => {
+                const springForce = -CONFIG.springStrength * leaf.bend;
+                leaf.bendVelocity += springForce * deltaTime;
+                leaf.bendVelocity *= Math.pow(CONFIG.friction, deltaTime);
+                leaf.bend += leaf.bendVelocity * deltaTime;
+                if (idx <= gameState.score + 1) leaf.scale += (1 - leaf.scale) * 0.12 * deltaTime;
+                else leaf.scale = 0;
+            });
+
+            const now = performance.now();
+            gameState.timeLeft = CONFIG.gameDuration - (now - gameState.startTime) / 1000;
+            if (gameState.timeLeft <= 0) {
+                gameState.timeLeft = 0;
+                updateUI();
+                gameOver();
+                return;
+            }
+            updateUI();
+            draw();
+            requestAnimationFrame(gameLoop);
+        }
+
+        initGame();
+        resize();
+        draw();
+    </script>
+</body>
+
+</html>
