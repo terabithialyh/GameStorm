@@ -34,7 +34,7 @@ fi
 
 # 启动服务器
 echo "🚀 正在启动服务器..."
-nohup npm run serve -- -p $PORT > server.log 2>&1 &
+nohup npx http-server -p $PORT -c-1 > server.log 2>&1 &
 SERVER_PID=$!
 
 # 保存 PID
