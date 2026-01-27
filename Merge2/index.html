@@ -82,10 +82,6 @@
             cursor: pointer;
             flex-shrink: 0;
         }
-        .fullscreen-btn:active {
-            transform: translateY(2px);
-            box-shadow: 0 1px 0 var(--border-ink);
-        }
 
         .stat-capsule {
             flex: 1;
@@ -129,10 +125,8 @@
             flex-shrink: 0;
             box-shadow: 4px 4px 0px var(--primary-pink);
             position: relative;
-            will-change: transform, opacity;
         }
 
-        /* 可完成任务的提示效果 */
         .task-card.ready-to-submit {
             border-color: var(--accent-gold);
             box-shadow: 0 0 15px var(--accent-gold), 4px 4px 0px var(--primary-pink);
@@ -190,6 +184,11 @@
             z-index: 10;
             pointer-events: none;
             will-change: transform, opacity;
+        }
+
+        /* 飞行中隐藏原本格子里的内容 */
+        .item.hidden-state {
+            opacity: 0;
         }
 
         .item svg {
@@ -283,7 +282,6 @@
             pointer-events: none;
         }
 
-        /* 闪烁的完成按钮 */
         .btn-ready-animate {
             animation: btn-flash 1s infinite alternate;
         }
@@ -358,7 +356,8 @@
         dragSourceIdx: -1,
         pointerId: null,
         knownTaskIds: new Set(),
-        isAnimatingTask: false // 防止点击过快导致动画重叠
+        isAnimatingTask: false,
+        pendingSlots: new Set()
     };
 
     const stories = [
@@ -399,7 +398,6 @@
             const el = document.documentElement;
             if (el.requestFullscreen) el.requestFullscreen();
             else if (el.webkitRequestFullscreen) el.webkitRequestFullscreen();
-            else if (el.msRequestFullscreen) el.msRequestFullscreen();
         } else {
             if (document.exitFullscreen) document.exitFullscreen();
             else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
@@ -439,7 +437,7 @@
                 });
             }
         },
-        flyIntoBoard(startEl, targetCell, lvl) {
+        flyIntoBoard(startEl, targetCell, lvl, idx) {
             const startRect = startEl.getBoundingClientRect();
             const targetRect = targetCell.getBoundingClientRect();
             const ghost = document.createElement('div');
@@ -449,9 +447,11 @@
             ghost.style.top = startRect.top + 'px';
             ghost.style.width = startRect.width + 'px';
             ghost.style.height = startRect.height + 'px';
+            ghost.style.pointerEvents = 'none'; 
             ghost.innerHTML = SVG_LIB['lvl' + lvl];
             ghost.style.zIndex = 2000;
             document.body.appendChild(ghost);
+
             gsap.to(ghost, {
                 duration: 0.6,
                 x: targetRect.left - startRect.left + (targetRect.width - startRect.width)/2,
@@ -461,23 +461,39 @@
                 ease: "power2.out",
                 onComplete: () => {
                     ghost.remove();
+                    state.pendingSlots.delete(idx);
                     renderGrid();
                     const cellItem = targetCell.querySelector('.item');
-                    if(cellItem) gsap.fromTo(cellItem, { scale: 0.5, y: -20 }, { scale: 1, y: 0, duration: 0.5, ease: "elastic.out(1, 0.3)" });
+                    if(cellItem) {
+                        cellItem.classList.remove('hidden-state');
+                        gsap.fromTo(cellItem, { scale: 0.5, y: -20 }, { scale: 1, y: 0, duration: 0.5, ease: "elastic.out(1, 0.3)" });
+                    }
                 }
             });
         },
         mergeJuice(itemEl) {
             gsap.fromTo(itemEl, { scaleX: 1.5, scaleY: 0.5 }, { scaleX: 1, scaleY: 1, duration: 0.6, ease: "elastic.out(1.2, 0.3)" });
         },
-        itemSuccess(itemEl, callback) {
-            gsap.to(itemEl, {
-                y: -50,
+        // 修复：创建克隆体进行动画，不再依赖DOM中的grid元素
+        itemSuccessClone(rect, lvl) {
+            const ghost = document.createElement('div');
+            ghost.className = 'item';
+            ghost.style.position = 'fixed';
+            ghost.style.left = rect.left + 'px';
+            ghost.style.top = rect.top + 'px';
+            ghost.style.width = rect.width + 'px';
+            ghost.style.height = rect.height + 'px';
+            ghost.innerHTML = SVG_LIB['lvl' + lvl];
+            ghost.style.zIndex = 2000;
+            document.body.appendChild(ghost);
+
+            gsap.to(ghost, {
+                y: rect.top - 50,
                 scale: 1.5,
                 opacity: 0,
                 duration: 0.5,
                 ease: "back.in(1.7)",
-                onComplete: callback
+                onComplete: () => ghost.remove()
             });
         },
         flyGold(fromX, fromY) {
@@ -508,25 +524,25 @@
                 });
             }
         },
-        // 订单离场动画 - 优化为向左快速消失
         taskExit(taskCard, callback) {
             gsap.to(taskCard, {
-                x: -250,
+                x: -500,
                 opacity: 0,
-                duration: 0.4,
+                duration: 0.5,
                 ease: "power2.in",
                 onComplete: callback
             });
         },
-        // 订单入场动画 - 添加延迟，确保离场动画已基本结束
         taskEnter(taskCard) {
+            const startX = window.innerWidth > 500 ? 500 : window.innerWidth;
             gsap.from(taskCard, {
-                x: 150,
+                x: startX,
                 opacity: 0,
-                scale: 0.8,
-                duration: 0.6,
-                delay: 0.4, // 增加延迟，错开动画
-                ease: "back.out(1.4)"
+                scale: 0.7,
+                rotation: 10,
+                duration: 0.7,
+                delay: 0.3,
+                ease: "back.out(1.2)"
             });
         }
     };
@@ -537,7 +553,8 @@
         const cell = e.target.closest('.grid-cell');
         if (!cell) return;
         const idx = parseInt(cell.dataset.idx);
-        if (!state.grid[idx]) return;
+        if (!state.grid[idx] || state.pendingSlots.has(idx)) return;
+
         state.isDragging = true;
         state.dragSourceIdx = idx;
         state.pointerId = e.pointerId;
@@ -553,28 +570,37 @@
         const cellItem = cell.querySelector('.item');
         if (cellItem) cellItem.style.opacity = '0';
     }
+
     function onPointerMove(e) { if (state.isDragging && e.pointerId === state.pointerId) updateDragPos(e); }
+
     function onPointerUp(e) {
         if (!state.isDragging || e.pointerId !== state.pointerId) return;
         const targetCell = document.elementFromPoint(e.clientX, e.clientY)?.closest('.grid-cell');
         if (targetCell) {
             const tIdx = parseInt(targetCell.dataset.idx);
-            if (state.dragSourceIdx !== tIdx) handleMergeLogic(state.dragSourceIdx, tIdx);
+            if (state.dragSourceIdx !== tIdx && !state.pendingSlots.has(tIdx)) {
+                handleMergeLogic(state.dragSourceIdx, tIdx);
+            }
         }
         if (dragProxy) dragProxy.remove();
         renderGrid();
         state.isDragging = false;
     }
+
     function updateDragPos(e) {
         if (!dragProxy) return;
         dragProxy.style.left = (e.clientX - dragProxy.offsetWidth / 2) + 'px';
         dragProxy.style.top = (e.clientY - dragProxy.offsetHeight / 2) + 'px';
     }
+
     function handleMergeLogic(s, t) {
         const sLv = state.grid[s], tLv = state.grid[t];
-        if (!tLv) { state.grid[t] = sLv; state.grid[s] = null; }
-        else if (sLv === tLv && sLv < 8) {
-            state.grid[t] = sLv + 1; state.grid[s] = null;
+        if (!tLv) {
+            state.grid[t] = sLv;
+            state.grid[s] = null;
+        } else if (sLv === tLv && sLv < 8) {
+            state.grid[t] = sLv + 1;
+            state.grid[s] = null;
             setTimeout(() => {
                 const targetCell = document.querySelectorAll('.grid-cell')[t];
                 const rect = targetCell.getBoundingClientRect();
@@ -584,43 +610,88 @@
             }, 10);
             if (sLv + 1 === 8) showStory(2);
         }
-        renderTasks();
+        // 合并后，需要更新所有任务的状态，因为可能原本满足的任务现在不满足了，或者反之
+        updateTaskStatuses();
     }
+
     function spawnNewItem() {
-        if (state.energy <= 0) { showToast("体力不足！休息一下吧。"); return; }
-        const emptyIndices = state.grid.map((v, i) => v === null ? i : null).filter(v => v !== null);
-        if (emptyIndices.length === 0) { showToast("棋盘满了！"); return; }
+        if (state.energy <= 0) {
+            showToast("体力不足！休息一下吧。");
+            return;
+        }
+
+        const emptyIndices = state.grid.map((val, idx) => {
+            if (!val && !state.pendingSlots.has(idx)) return idx;
+            return -1;
+        }).filter(i => i !== -1);
+
+        if (emptyIndices.length === 0) {
+            showToast("棋盘满了！请先合成物品。");
+            return;
+        }
+
         const luckyIdx = emptyIndices[Math.floor(Math.random() * emptyIndices.length)];
-        state.grid[luckyIdx] = 1; state.energy--; refreshUI();
-        Animator.flyIntoBoard(document.getElementById('spawner'), document.querySelectorAll('.grid-cell')[luckyIdx], 1);
-        setTimeout(renderTasks, 650);
+
+        if (state.grid[luckyIdx] || state.pendingSlots.has(luckyIdx)) {
+            if(emptyIndices.length > 1) {
+                spawnNewItem(); 
+            }
+            return; 
+        }
+
+        state.grid[luckyIdx] = 1; 
+        state.pendingSlots.add(luckyIdx);
+        state.energy--;
+        
+        refreshUI();
+        renderGrid(); 
+        
+        const spawner = document.getElementById('spawner');
+        const targetCell = document.querySelectorAll('.grid-cell')[luckyIdx];
+        
+        Animator.flyIntoBoard(spawner, targetCell, 1, luckyIdx);
+        
+        // 飞行中也可能影响任务判定，不过主要影响在落地后
+        // 这里暂时不立即刷新任务状态，等待落地动画结束
+        setTimeout(() => {
+            renderTasks(); // 重新全量渲染，或者用 updateTaskStatuses
+        }, 650);
     }
+
     function renderGrid() {
         const cells = document.querySelectorAll('.grid-cell');
         state.grid.forEach((lv, i) => {
-            cells[i].innerHTML = lv ? `<div class="item">${SVG_LIB['lvl' + lv]}</div>` : '';
+            cells[i].innerHTML = '';
+            if (lv) {
+                const itemEl = document.createElement('div');
+                itemEl.className = 'item';
+                if (state.pendingSlots.has(i)) {
+                    itemEl.classList.add('hidden-state');
+                }
+                itemEl.innerHTML = SVG_LIB['lvl' + lv];
+                cells[i].appendChild(itemEl);
+            }
         });
     }
+
     function createTasks() { 
         state.tasks = [{ id: 1, req: 2, reward: 120 }, { id: 2, req: 3, reward: 280 }]; 
         state.tasks.forEach(t => state.knownTaskIds.add(t.id));
         renderTasks(); 
     }
     
+    // 全量重绘任务（用于添加/删除任务卡片）
     function renderTasks() {
         const container = document.getElementById('task-list'); 
-        // 标记：如果正在处理交付动画，先不要全量重绘
         if(state.isAnimatingTask) return;
 
         container.innerHTML = '';
         state.tasks.forEach(task => {
             const isReady = state.grid.includes(task.req);
             const isNew = !state.knownTaskIds.has(task.id);
-            
             const card = document.createElement('div'); 
             card.className = `task-card ${isReady ? 'ready-to-submit' : ''}`;
             card.id = `task-${task.id}`;
-            
             card.innerHTML = `
                 ${isReady ? '<div class="ready-badge">READY!</div>' : ''}
                 <div class="w-16 h-16 bg-gray-50 border-2 border-black rounded-lg p-2">${SVG_LIB['lvl'+task.req]}</div>
@@ -634,7 +705,6 @@
                     </button>
                 </div>`;
             container.appendChild(card);
-
             if (isNew) {
                 Animator.taskEnter(card);
                 state.knownTaskIds.add(task.id);
@@ -642,9 +712,40 @@
         });
     }
 
+    // 轻量级状态刷新（不破坏DOM，仅更新样式）
+    function updateTaskStatuses(excludeTaskId = null) {
+        state.tasks.forEach(task => {
+            if (task.id === excludeTaskId) return; // 正在飞走的卡片不要动
+
+            const card = document.getElementById(`task-${task.id}`);
+            if (!card) return;
+
+            const isReady = state.grid.includes(task.req);
+            const btn = card.querySelector('button');
+            const badge = card.querySelector('.ready-badge');
+
+            if (isReady) {
+                if (!card.classList.contains('ready-to-submit')) {
+                    card.classList.add('ready-to-submit');
+                    btn.classList.remove('opacity-50');
+                    btn.classList.add('btn-ready-animate');
+                    if (!badge) {
+                        card.insertAdjacentHTML('afterbegin', '<div class="ready-badge">READY!</div>');
+                    }
+                }
+            } else {
+                if (card.classList.contains('ready-to-submit')) {
+                    card.classList.remove('ready-to-submit');
+                    btn.classList.add('opacity-50');
+                    btn.classList.remove('btn-ready-animate');
+                    if (badge) badge.remove();
+                }
+            }
+        });
+    }
+
     function deliverTask(event, taskId) {
         if(state.isAnimatingTask) return;
-        
         const btn = event.currentTarget;
         const taskCard = btn.closest('.task-card');
         const btnRect = btn.getBoundingClientRect();
@@ -652,46 +753,41 @@
         const itemIdx = state.grid.indexOf(task.req);
         
         if (itemIdx !== -1) {
-            state.isAnimatingTask = true; // 加锁
+            state.isAnimatingTask = true; 
             const gridCells = document.querySelectorAll('.grid-cell');
-            const targetItemEl = gridCells[itemIdx].querySelector('.item');
+            // 获取位置信息用于生成克隆
+            const targetItemRect = gridCells[itemIdx].querySelector('.item').getBoundingClientRect();
             
-            // 1. 交付相关的三个核心动画
-            // A. 物品在棋盘飞散
-            Animator.itemSuccess(targetItemEl, () => {
-                state.grid[itemIdx] = null;
-                renderGrid();
-            });
+            // 1. 立即扣除数据，确保其他订单能检测到物品已消失
+            const itemLvl = state.grid[itemIdx];
+            state.grid[itemIdx] = null; 
+            state.gold += task.reward;
+            
+            // 2. 立即刷新棋盘（移除原物品DOM）
+            renderGrid();
 
-            // B. 订单卡片飞出场外
+            // 3. 立即刷新其他任务的状态（排除当前正在飞走的任务）
+            updateTaskStatuses(taskId);
+
+            // 4. 播放视觉动画（使用克隆体）
             Animator.taskExit(taskCard, () => {
-                // 离场动画结束后，执行数据层更新
                 state.tasks = state.tasks.filter(t => t.id !== taskId);
                 state.knownTaskIds.delete(taskId);
-                
-                // 补充新任务
                 const nextReq = Math.min(Math.floor(state.gold / 600) + 2, 7);
                 const newTaskId = Date.now();
-                state.tasks.push({ 
-                    id: newTaskId, 
-                    req: Math.floor(Math.random() * nextReq) + 1, 
-                    reward: (Math.floor(Math.random() * 5) + 3) * 45 
-                });
-                
-                state.isAnimatingTask = false; // 解锁
-                renderTasks(); // 重新渲染，新订单会自动执行 Animator.taskEnter
+                state.tasks.push({ id: newTaskId, req: Math.floor(Math.random() * nextReq) + 1, reward: (Math.floor(Math.random() * 5) + 3) * 45 });
+                state.isAnimatingTask = false; 
+                renderTasks(); 
             });
 
-            // C. 金币飞行
+            // 使用克隆体播放升华动画
+            Animator.itemSuccessClone(targetItemRect, itemLvl);
+            
             Animator.flyGold(btnRect.left + btnRect.width/2, btnRect.top + btnRect.height/2);
-
-            state.gold += task.reward;
-            setTimeout(refreshUI, 600);
-
+            
+            refreshUI();
             if (state.gold > state.level * 1200) { state.level++; showStory(1); }
-        } else {
-            showToast("还没合成该物品哦！");
-        }
+        } else showToast("还没合成该物品哦！");
     }
 
     function refreshUI() { document.getElementById('energy').innerText = state.energy; document.getElementById('gold').innerText = state.gold; document.getElementById('lv').innerText = state.level; }
