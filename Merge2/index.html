@@ -1,0 +1,704 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <!-- PWA全屏支持 -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="mobile-web-app-capable" content="yes">
+    <title>时尚逆袭：璀璨之星</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Fredoka:wght@400;700&family=Lexend:wght@400;700&display=swap');
+
+        :root {
+            --primary-pink: #FF4D94;
+            --dark-pink: #D4145A;
+            --accent-gold: #FFD700;
+            --bg-light: #FFF5F8;
+            --border-ink: #2D1B22;
+            --cell-bg: #FAD2E1;
+        }
+
+        /* 基础重置 */
+        * {
+            box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
+            user-select: none;
+            -webkit-user-drag: none;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            width: 100vw;
+            height: 100dvh;
+            overflow: hidden;
+            background: #1a1a1a;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-family: 'Lexend', sans-serif;
+            touch-action: none;
+        }
+
+        #viewport {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            max-width: calc(100dvh * 9 / 16);
+            max-height: 100dvh;
+            aspect-ratio: 9 / 16;
+            background: var(--bg-light);
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 0 50px rgba(0,0,0,0.5);
+            overflow: hidden;
+        }
+
+        header {
+            padding: calc(15px + env(safe-area-inset-top)) 15px 10px;
+            background: white;
+            border-bottom: 4px solid var(--border-ink);
+            display: flex;
+            justify-content: space-around;
+            align-items: center;
+            gap: 8px;
+            z-index: 50;
+        }
+
+        .fullscreen-btn {
+            width: 40px;
+            height: 40px;
+            background: white;
+            border: 3px solid var(--border-ink);
+            border-radius: 12px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            box-shadow: 0 3px 0 var(--border-ink);
+            cursor: pointer;
+            flex-shrink: 0;
+        }
+        .fullscreen-btn:active {
+            transform: translateY(2px);
+            box-shadow: 0 1px 0 var(--border-ink);
+        }
+
+        .stat-capsule {
+            flex: 1;
+            background: white;
+            border: 3px solid var(--border-ink);
+            border-radius: 20px;
+            padding: 5px 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 4px;
+            font-family: 'Fredoka', sans-serif;
+            font-weight: 700;
+            box-shadow: 0 4px 0 var(--border-ink);
+            font-size: 0.9rem;
+        }
+
+        .task-container {
+            height: 140px;
+            padding: 10px;
+            background: #FFEDF4;
+            display: flex;
+            gap: 15px;
+            overflow-x: auto;
+            border-bottom: 4px solid var(--border-ink);
+            scrollbar-width: none;
+            align-items: center;
+            position: relative;
+        }
+        .task-container::-webkit-scrollbar { display: none; }
+
+        .task-card {
+            min-width: 160px;
+            height: 95px;
+            background: white;
+            border: 3px solid var(--border-ink);
+            border-radius: 16px;
+            display: flex;
+            padding: 8px;
+            gap: 10px;
+            flex-shrink: 0;
+            box-shadow: 4px 4px 0px var(--primary-pink);
+            position: relative;
+            will-change: transform, opacity;
+        }
+
+        /* 可完成任务的提示效果 */
+        .task-card.ready-to-submit {
+            border-color: var(--accent-gold);
+            box-shadow: 0 0 15px var(--accent-gold), 4px 4px 0px var(--primary-pink);
+            animation: card-bounce 2s infinite ease-in-out;
+        }
+
+        @keyframes card-bounce {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-5px); }
+        }
+
+        .ready-badge {
+            position: absolute;
+            top: -10px;
+            right: -5px;
+            background: var(--accent-gold);
+            border: 2px solid var(--border-ink);
+            border-radius: 10px;
+            padding: 2px 6px;
+            font-size: 10px;
+            font-weight: 900;
+            color: var(--border-ink);
+            box-shadow: 2px 2px 0 var(--border-ink);
+            z-index: 10;
+        }
+
+        main {
+            flex: 1;
+            padding: 10px;
+            display: grid;
+            grid-template-columns: repeat(6, 1fr);
+            grid-template-rows: repeat(7, 1fr);
+            gap: 8px;
+            background: #FFE4EE;
+            position: relative;
+        }
+
+        .grid-cell {
+            background: var(--cell-bg);
+            border-radius: 12px;
+            border: 2px solid rgba(45, 27, 34, 0.08);
+            position: relative;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .item {
+            width: 85%;
+            height: 85%;
+            position: absolute;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 10;
+            pointer-events: none;
+            will-change: transform, opacity;
+        }
+
+        .item svg {
+            width: 100%;
+            height: 100%;
+            filter: drop-shadow(0 4px 0 rgba(0,0,0,0.15));
+        }
+
+        .particle {
+            position: fixed;
+            pointer-events: none;
+            z-index: 1500;
+            border-radius: 50%;
+        }
+
+        .fly-coin {
+            position: fixed;
+            pointer-events: none;
+            z-index: 3000;
+            font-size: 20px;
+            filter: drop-shadow(0 2px 2px rgba(0,0,0,0.2));
+        }
+
+        .dragging {
+            z-index: 1000 !important;
+            opacity: 0.8;
+            transform: scale(1.15);
+        }
+
+        footer {
+            height: 140px;
+            padding-bottom: env(safe-area-inset-bottom);
+            background: white;
+            border-top: 4px solid var(--border-ink);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 50;
+        }
+
+        .spawner-btn {
+            width: 90px;
+            height: 90px;
+            background: var(--primary-pink);
+            border: 4px solid var(--border-ink);
+            border-radius: 50%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            box-shadow: 0 6px 0 var(--dark-pink), 0 10px 0 var(--border-ink);
+            cursor: pointer;
+            position: relative;
+        }
+
+        .spawner-btn:active {
+            transform: translateY(4px);
+            box-shadow: 0 2px 0 var(--dark-pink), 0 6px 0 var(--border-ink);
+        }
+
+        .story-mask {
+            position: absolute;
+            inset: 0;
+            background: rgba(45, 27, 34, 0.9);
+            z-index: 500;
+            display: none;
+            flex-direction: column;
+            justify-content: flex-end;
+            padding: 30px;
+        }
+
+        .dialog {
+            background: white;
+            border: 4px solid var(--border-ink);
+            border-radius: 24px;
+            padding: 24px;
+            box-shadow: 0 10px 0 var(--border-ink);
+        }
+
+        .toast {
+            position: absolute;
+            top: 25%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: var(--border-ink);
+            color: white;
+            padding: 10px 25px;
+            border-radius: 30px;
+            font-weight: bold;
+            z-index: 200;
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        /* 闪烁的完成按钮 */
+        .btn-ready-animate {
+            animation: btn-flash 1s infinite alternate;
+        }
+        @keyframes btn-flash {
+            from { filter: brightness(1); transform: scale(1); }
+            to { filter: brightness(1.2); transform: scale(1.05); }
+        }
+    </style>
+</head>
+<body>
+
+<div id="viewport">
+    <header>
+        <div class="fullscreen-btn" onclick="toggleFullScreen()" title="切换全屏">
+            <svg viewBox="0 0 24 24" width="24" height="24" stroke="currentColor" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path></svg>
+        </div>
+        <div class="stat-capsule"><span style="color:#FF4D94">⚡</span><span id="energy">100</span></div>
+        <div id="gold-capsule" class="stat-capsule"><span style="color:#FFD700">💰</span><span id="gold">0</span></div>
+        <div class="stat-capsule"><span style="color:#9D6BFF">⭐</span><span id="lv">1</span></div>
+    </header>
+
+    <div class="task-container" id="task-list"></div>
+
+    <main id="board-grid"></main>
+
+    <footer>
+        <div id="spawner" class="spawner-btn" onclick="spawnNewItem()">
+            <svg viewBox="0 0 100 100" class="w-14 h-14">
+                <rect x="20" y="30" width="60" height="50" rx="5" fill="#FF4D94" stroke="#2D1B22" stroke-width="5"/>
+                <path d="M20 45 H80 M50 30 V80" stroke="#2D1B22" stroke-width="5" fill="none"/>
+                <path d="M35 20 C40 10 60 10 65 20" stroke="#2D1B22" stroke-width="5" fill="none"/>
+            </svg>
+        </div>
+    </footer>
+
+    <div class="story-mask" id="story-mask">
+        <div class="dialog">
+            <h3 id="char-name" class="font-bold text-pink-600 text-xl mb-2 italic">苏菲</h3>
+            <p id="dialog-text" class="text-gray-800 text-lg leading-snug"></p>
+            <button onclick="closeStory()" class="mt-6 w-full bg-pink-500 text-white py-3 rounded-xl border-4 border-black font-bold text-xl shadow-[0_5px_0_#000]">准备好了！</button>
+        </div>
+    </div>
+
+    <div id="toast" class="toast">体力不足！</div>
+</div>
+
+<script>
+    const SVG_LIB = {
+        lvl1: `<svg viewBox="0 0 100 100"><path d="M30 20 L30 80 M30 30 H70 M30 45 H70 M30 60 H70 M30 75 H70" stroke="#2D1B22" stroke-width="8" stroke-linecap="round"/><circle cx="30" cy="20" r="5" fill="#2D1B22"/></svg>`,
+        lvl2: `<svg viewBox="0 0 100 100"><ellipse cx="50" cy="40" rx="30" ry="35" fill="#B5EFFF" stroke="#2D1B22" stroke-width="6"/><rect x="45" y="75" width="10" height="20" rx="5" fill="#FFBBDD" stroke="#2D1B22" stroke-width="6"/></svg>`,
+        lvl3: `<svg viewBox="0 0 100 100"><rect x="35" y="50" width="30" height="40" fill="#2D1B22" rx="4"/><rect x="40" y="20" width="20" height="30" fill="#FF4D94" rx="2"/></svg>`,
+        lvl4: `<svg viewBox="0 0 100 100"><path d="M30 40 H70 V85 H30 Z" fill="#D4BFFF" stroke="#2D1B22" stroke-width="6"/><circle cx="50" cy="30" r="10" fill="#FFD700" stroke="#2D1B22" stroke-width="4"/></svg>`,
+        lvl5: `<svg viewBox="0 0 100 100"><path d="M25 40 H75 L80 85 H20 Z" fill="#FF8C00" stroke="#2D1B22" stroke-width="6"/><path d="M35 40 Q50 15 65 40" fill="none" stroke="#2D1B22" stroke-width="6"/></svg>`,
+        lvl6: `<svg viewBox="0 0 100 100"><path d="M20 75 L40 75 L80 25 L85 30 L50 90 L20 90 Z" fill="#FF004D" stroke="#2D1B22" stroke-width="6"/></svg>`,
+        lvl7: `<svg viewBox="0 0 100 100"><path d="M50 20 L30 40 L35 90 H65 L70 40 Z" fill="#FF4D94" stroke="#2D1B22" stroke-width="6"/><path d="M30 40 Q50 50 70 40" fill="none" stroke="#2D1B22" stroke-width="4"/></svg>`,
+        lvl8: `<svg viewBox="0 0 100 100"><path d="M20 70 L20 30 L35 50 L50 20 L65 50 L80 30 L80 70 Z" fill="#FFD700" stroke="#2D1B22" stroke-width="6"/><circle cx="50" cy="25" r="5" fill="#FF004D"/></svg>`
+    };
+
+    const CONFIG = {
+        gridCount: 42,
+        maxEnergy: 100,
+        energyRegenSec: 120
+    };
+
+    let state = {
+        energy: 100,
+        gold: 0,
+        level: 1,
+        grid: Array(CONFIG.gridCount).fill(null),
+        tasks: [],
+        isDragging: false,
+        dragSourceIdx: -1,
+        pointerId: null,
+        knownTaskIds: new Set(),
+        isAnimatingTask: false // 防止点击过快导致动画重叠
+    };
+
+    const stories = [
+        { name: "苏菲", text: "即使在二手店打工，我也从未放弃我的设计师梦。今天先从整理这些基础配饰开始吧！" },
+        { name: "面试官", text: "想要参加时尚周？先证明你的眼光。帮我搭配出一套完美的香氛礼盒。" },
+        { name: "璀璨之路", text: "不可思议！苏菲，你竟然合成了传闻中的‘星光皇冠’。你准备好走上T台了吗？" }
+    ];
+
+    function init() {
+        const board = document.getElementById('board-grid');
+        for (let i = 0; i < CONFIG.gridCount; i++) {
+            const cell = document.createElement('div');
+            cell.className = 'grid-cell';
+            cell.dataset.idx = i;
+            board.appendChild(cell);
+        }
+
+        board.addEventListener('pointerdown', onPointerDown);
+        window.addEventListener('pointermove', onPointerMove);
+        window.addEventListener('pointerup', onPointerUp);
+
+        createTasks();
+        refreshUI();
+        showStory(0);
+        
+        setInterval(() => {
+            if (state.energy < CONFIG.maxEnergy) {
+                state.energy++;
+                document.getElementById('energy').innerText = state.energy;
+            }
+        }, CONFIG.energyRegenSec * 1000);
+
+        renderGrid();
+    }
+
+    function toggleFullScreen() {
+        if (!document.fullscreenElement && !document.webkitFullscreenElement) {
+            const el = document.documentElement;
+            if (el.requestFullscreen) el.requestFullscreen();
+            else if (el.webkitRequestFullscreen) el.webkitRequestFullscreen();
+            else if (el.msRequestFullscreen) el.msRequestFullscreen();
+        } else {
+            if (document.exitFullscreen) document.exitFullscreen();
+            else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+        }
+    }
+
+    const Animator = {
+        createParticleBurst(x, y) {
+            const colors = ['#FF4D94', '#FFD700', '#FFFFFF', '#9D6BFF'];
+            const count = 15;
+            for (let i = 0; i < count; i++) {
+                const particle = document.createElement('div');
+                particle.className = 'particle';
+                const isStar = Math.random() > 0.6;
+                const size = Math.random() * 10 + 6;
+                if (isStar) {
+                    particle.innerHTML = `<svg viewBox="0 0 24 24" width="${size}" height="${size}"><path fill="${colors[Math.floor(Math.random() * colors.length)]}" d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>`;
+                } else {
+                    particle.style.width = size + 'px';
+                    particle.style.height = size + 'px';
+                    particle.style.background = colors[Math.floor(Math.random() * colors.length)];
+                }
+                particle.style.left = x + 'px';
+                particle.style.top = y + 'px';
+                document.body.appendChild(particle);
+                const angle = Math.random() * Math.PI * 2;
+                const force = Math.random() * 150 + 50;
+                gsap.to(particle, {
+                    duration: 0.8 + Math.random() * 0.4,
+                    x: Math.cos(angle) * force,
+                    y: Math.sin(angle) * force + 50,
+                    rotation: Math.random() * 720,
+                    opacity: 0,
+                    scale: 0,
+                    ease: "power2.out",
+                    onComplete: () => particle.remove()
+                });
+            }
+        },
+        flyIntoBoard(startEl, targetCell, lvl) {
+            const startRect = startEl.getBoundingClientRect();
+            const targetRect = targetCell.getBoundingClientRect();
+            const ghost = document.createElement('div');
+            ghost.className = 'item';
+            ghost.style.position = 'fixed';
+            ghost.style.left = startRect.left + 'px';
+            ghost.style.top = startRect.top + 'px';
+            ghost.style.width = startRect.width + 'px';
+            ghost.style.height = startRect.height + 'px';
+            ghost.innerHTML = SVG_LIB['lvl' + lvl];
+            ghost.style.zIndex = 2000;
+            document.body.appendChild(ghost);
+            gsap.to(ghost, {
+                duration: 0.6,
+                x: targetRect.left - startRect.left + (targetRect.width - startRect.width)/2,
+                y: targetRect.top - startRect.top + (targetRect.height - startRect.height)/2,
+                rotation: 360,
+                scale: 1.2,
+                ease: "power2.out",
+                onComplete: () => {
+                    ghost.remove();
+                    renderGrid();
+                    const cellItem = targetCell.querySelector('.item');
+                    if(cellItem) gsap.fromTo(cellItem, { scale: 0.5, y: -20 }, { scale: 1, y: 0, duration: 0.5, ease: "elastic.out(1, 0.3)" });
+                }
+            });
+        },
+        mergeJuice(itemEl) {
+            gsap.fromTo(itemEl, { scaleX: 1.5, scaleY: 0.5 }, { scaleX: 1, scaleY: 1, duration: 0.6, ease: "elastic.out(1.2, 0.3)" });
+        },
+        itemSuccess(itemEl, callback) {
+            gsap.to(itemEl, {
+                y: -50,
+                scale: 1.5,
+                opacity: 0,
+                duration: 0.5,
+                ease: "back.in(1.7)",
+                onComplete: callback
+            });
+        },
+        flyGold(fromX, fromY) {
+            const goldCapsule = document.getElementById('gold-capsule');
+            const targetRect = goldCapsule.getBoundingClientRect();
+            const count = 6;
+            for(let i=0; i<count; i++) {
+                const coin = document.createElement('div');
+                coin.className = 'fly-coin';
+                coin.innerText = '💰';
+                coin.style.left = fromX + 'px';
+                coin.style.top = fromY + 'px';
+                document.body.appendChild(coin);
+                gsap.to(coin, {
+                    x: (targetRect.left - fromX) + (Math.random() * 40 - 20),
+                    y: (targetRect.top - fromY) + (Math.random() * 20 - 10),
+                    opacity: 0.5,
+                    scale: 0.5,
+                    duration: 0.6 + Math.random() * 0.4,
+                    delay: i * 0.05,
+                    ease: "power2.in",
+                    onComplete: () => {
+                        coin.remove();
+                        if(i === count - 1) {
+                            gsap.fromTo(goldCapsule, {scale: 1}, {scale: 1.2, duration: 0.1, yoyo: true, repeat: 1});
+                        }
+                    }
+                });
+            }
+        },
+        // 订单离场动画 - 优化为向左快速消失
+        taskExit(taskCard, callback) {
+            gsap.to(taskCard, {
+                x: -250,
+                opacity: 0,
+                duration: 0.4,
+                ease: "power2.in",
+                onComplete: callback
+            });
+        },
+        // 订单入场动画 - 添加延迟，确保离场动画已基本结束
+        taskEnter(taskCard) {
+            gsap.from(taskCard, {
+                x: 150,
+                opacity: 0,
+                scale: 0.8,
+                duration: 0.6,
+                delay: 0.4, // 增加延迟，错开动画
+                ease: "back.out(1.4)"
+            });
+        }
+    };
+
+    let dragProxy = null;
+    function onPointerDown(e) {
+        if (state.isDragging) return;
+        const cell = e.target.closest('.grid-cell');
+        if (!cell) return;
+        const idx = parseInt(cell.dataset.idx);
+        if (!state.grid[idx]) return;
+        state.isDragging = true;
+        state.dragSourceIdx = idx;
+        state.pointerId = e.pointerId;
+        const cellRect = cell.getBoundingClientRect();
+        dragProxy = document.createElement('div');
+        dragProxy.className = 'item dragging';
+        dragProxy.style.position = 'fixed';
+        dragProxy.style.width = cellRect.width + 'px';
+        dragProxy.style.height = cellRect.height + 'px';
+        dragProxy.innerHTML = SVG_LIB['lvl' + state.grid[idx]];
+        document.body.appendChild(dragProxy);
+        updateDragPos(e);
+        const cellItem = cell.querySelector('.item');
+        if (cellItem) cellItem.style.opacity = '0';
+    }
+    function onPointerMove(e) { if (state.isDragging && e.pointerId === state.pointerId) updateDragPos(e); }
+    function onPointerUp(e) {
+        if (!state.isDragging || e.pointerId !== state.pointerId) return;
+        const targetCell = document.elementFromPoint(e.clientX, e.clientY)?.closest('.grid-cell');
+        if (targetCell) {
+            const tIdx = parseInt(targetCell.dataset.idx);
+            if (state.dragSourceIdx !== tIdx) handleMergeLogic(state.dragSourceIdx, tIdx);
+        }
+        if (dragProxy) dragProxy.remove();
+        renderGrid();
+        state.isDragging = false;
+    }
+    function updateDragPos(e) {
+        if (!dragProxy) return;
+        dragProxy.style.left = (e.clientX - dragProxy.offsetWidth / 2) + 'px';
+        dragProxy.style.top = (e.clientY - dragProxy.offsetHeight / 2) + 'px';
+    }
+    function handleMergeLogic(s, t) {
+        const sLv = state.grid[s], tLv = state.grid[t];
+        if (!tLv) { state.grid[t] = sLv; state.grid[s] = null; }
+        else if (sLv === tLv && sLv < 8) {
+            state.grid[t] = sLv + 1; state.grid[s] = null;
+            setTimeout(() => {
+                const targetCell = document.querySelectorAll('.grid-cell')[t];
+                const rect = targetCell.getBoundingClientRect();
+                Animator.createParticleBurst(rect.left + rect.width / 2, rect.top + rect.height / 2);
+                const itemEl = targetCell.querySelector('.item');
+                if (itemEl) Animator.mergeJuice(itemEl);
+            }, 10);
+            if (sLv + 1 === 8) showStory(2);
+        }
+        renderTasks();
+    }
+    function spawnNewItem() {
+        if (state.energy <= 0) { showToast("体力不足！休息一下吧。"); return; }
+        const emptyIndices = state.grid.map((v, i) => v === null ? i : null).filter(v => v !== null);
+        if (emptyIndices.length === 0) { showToast("棋盘满了！"); return; }
+        const luckyIdx = emptyIndices[Math.floor(Math.random() * emptyIndices.length)];
+        state.grid[luckyIdx] = 1; state.energy--; refreshUI();
+        Animator.flyIntoBoard(document.getElementById('spawner'), document.querySelectorAll('.grid-cell')[luckyIdx], 1);
+        setTimeout(renderTasks, 650);
+    }
+    function renderGrid() {
+        const cells = document.querySelectorAll('.grid-cell');
+        state.grid.forEach((lv, i) => {
+            cells[i].innerHTML = lv ? `<div class="item">${SVG_LIB['lvl' + lv]}</div>` : '';
+        });
+    }
+    function createTasks() { 
+        state.tasks = [{ id: 1, req: 2, reward: 120 }, { id: 2, req: 3, reward: 280 }]; 
+        state.tasks.forEach(t => state.knownTaskIds.add(t.id));
+        renderTasks(); 
+    }
+    
+    function renderTasks() {
+        const container = document.getElementById('task-list'); 
+        // 标记：如果正在处理交付动画，先不要全量重绘
+        if(state.isAnimatingTask) return;
+
+        container.innerHTML = '';
+        state.tasks.forEach(task => {
+            const isReady = state.grid.includes(task.req);
+            const isNew = !state.knownTaskIds.has(task.id);
+            
+            const card = document.createElement('div'); 
+            card.className = `task-card ${isReady ? 'ready-to-submit' : ''}`;
+            card.id = `task-${task.id}`;
+            
+            card.innerHTML = `
+                ${isReady ? '<div class="ready-badge">READY!</div>' : ''}
+                <div class="w-16 h-16 bg-gray-50 border-2 border-black rounded-lg p-2">${SVG_LIB['lvl'+task.req]}</div>
+                <div class="flex-1 flex flex-col justify-between py-1">
+                    <div class="text-[10px] font-black text-pink-500 uppercase">Need It</div>
+                    <div class="font-bold text-lg">💰 ${task.reward}</div>
+                    <button onclick="deliverTask(event, ${task.id})" 
+                        class="bg-green-400 border-2 border-black rounded py-0.5 text-[10px] font-black shadow-[2px_2px_0_#000] 
+                        active:shadow-none active:translate-y-0.5 ${isReady ? 'btn-ready-animate' : 'opacity-50'}">
+                        DELIVER
+                    </button>
+                </div>`;
+            container.appendChild(card);
+
+            if (isNew) {
+                Animator.taskEnter(card);
+                state.knownTaskIds.add(task.id);
+            }
+        });
+    }
+
+    function deliverTask(event, taskId) {
+        if(state.isAnimatingTask) return;
+        
+        const btn = event.currentTarget;
+        const taskCard = btn.closest('.task-card');
+        const btnRect = btn.getBoundingClientRect();
+        const task = state.tasks.find(t => t.id === taskId); 
+        const itemIdx = state.grid.indexOf(task.req);
+        
+        if (itemIdx !== -1) {
+            state.isAnimatingTask = true; // 加锁
+            const gridCells = document.querySelectorAll('.grid-cell');
+            const targetItemEl = gridCells[itemIdx].querySelector('.item');
+            
+            // 1. 交付相关的三个核心动画
+            // A. 物品在棋盘飞散
+            Animator.itemSuccess(targetItemEl, () => {
+                state.grid[itemIdx] = null;
+                renderGrid();
+            });
+
+            // B. 订单卡片飞出场外
+            Animator.taskExit(taskCard, () => {
+                // 离场动画结束后，执行数据层更新
+                state.tasks = state.tasks.filter(t => t.id !== taskId);
+                state.knownTaskIds.delete(taskId);
+                
+                // 补充新任务
+                const nextReq = Math.min(Math.floor(state.gold / 600) + 2, 7);
+                const newTaskId = Date.now();
+                state.tasks.push({ 
+                    id: newTaskId, 
+                    req: Math.floor(Math.random() * nextReq) + 1, 
+                    reward: (Math.floor(Math.random() * 5) + 3) * 45 
+                });
+                
+                state.isAnimatingTask = false; // 解锁
+                renderTasks(); // 重新渲染，新订单会自动执行 Animator.taskEnter
+            });
+
+            // C. 金币飞行
+            Animator.flyGold(btnRect.left + btnRect.width/2, btnRect.top + btnRect.height/2);
+
+            state.gold += task.reward;
+            setTimeout(refreshUI, 600);
+
+            if (state.gold > state.level * 1200) { state.level++; showStory(1); }
+        } else {
+            showToast("还没合成该物品哦！");
+        }
+    }
+
+    function refreshUI() { document.getElementById('energy').innerText = state.energy; document.getElementById('gold').innerText = state.gold; document.getElementById('lv').innerText = state.level; }
+    function showStory(idx) { const s = stories[idx]; if (!s) return; document.getElementById('story-mask').style.display = 'flex'; document.getElementById('char-name').innerText = s.name; document.getElementById('dialog-text').innerText = s.text; }
+    function closeStory() { document.getElementById('story-mask').style.display = 'none'; }
+    function showToast(msg) { const t = document.getElementById('toast'); t.innerText = msg; gsap.to(t, { opacity: 1, y: -20, duration: 0.3 }); setTimeout(() => gsap.to(t, { opacity: 0, y: 0, duration: 0.3 }), 2000); }
+    window.onload = init;
+</script>
+</body>
+</html>
