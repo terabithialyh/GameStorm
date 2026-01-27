@@ -4,29 +4,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-GameStorm is a collection of two HTML5 mobile puzzle games built with vanilla JavaScript:
+GameStorm is a collection of HTML5 mobile puzzle games built with vanilla JavaScript:
 
-1. **Fashion Match** (时尚消消乐) - Root `index.html` - Match-3 puzzle game
+1. **Fashion Match** (时尚消消乐) - `FashionMatch/index.html` - Match-3 puzzle game
 2. **Merge2** (时尚逆袭：璀璨之星) - `Merge2/index.html` - Merge puzzle game
 
 Both games use a **single-file architecture** with no build system. All HTML, CSS, and JavaScript are contained in their respective `index.html` files.
 
 ## Development Commands
 
-### Fashion Match (Root Game)
+### Start All Games (Root Level)
 ```bash
-# Open directly in browser (no server needed)
-open index.html
-
-# Or serve with any static server
-python3 -m http.server 8080
-# Then visit http://localhost:8080
-```
-
-### Merge2 Game
-```bash
-cd Merge2
-
 # Recommended: Use shell scripts
 ./start.sh              # Auto-installs deps, opens browser on port 8000
 ./start.sh 3000         # Use custom port
@@ -39,13 +27,26 @@ npm run dev             # No-cache mode for development
 npm run serve           # Server only (no browser)
 ```
 
+Server runs on http://localhost:8000 and serves:
+- Navigation page: http://localhost:8000/
+- Fashion Match: http://localhost:8000/FashionMatch/
+- Merge2: http://localhost:8000/Merge2/
+
+**Shell Scripts Features:**
+- Automatic dependency installation
+- PID management (prevents duplicate servers)
+- Port conflict detection
+- Auto-open browser
+- Background process with logging to `server.log`
+- Uses `npx http-server` directly to allow dynamic port configuration
+
 ## Architecture
 
 ### Two Different Approaches
 
 | Aspect | Fashion Match | Merge2 |
 |--------|--------------|--------|
-| **File** | `index.html` (434 lines) | `Merge2/index.html` (799 lines) |
+| **File** | `FashionMatch/index.html` (434 lines) | `Merge2/index.html` (799 lines) |
 | **Pattern** | Class-based OOP | Imperative + Functional modules |
 | **Rendering** | HTML5 Canvas 2D API | DOM manipulation |
 | **Animation** | Manual (requestAnimationFrame) | GSAP 3.12.2 library |
@@ -55,7 +56,9 @@ npm run serve           # Server only (no browser)
 
 ### Fashion Match Architecture
 
-**Entry Point:** `index.html:430` - `const game = new Game()`
+**Location:** `FashionMatch/index.html`
+
+**Entry Point:** Line 430 - `const game = new Game()`
 
 **Core Class:** `Game` (lines 121-413)
 - Canvas-based rendering engine
@@ -74,7 +77,9 @@ npm run serve           # Server only (no browser)
 
 ### Merge2 Architecture
 
-**Entry Point:** `Merge2/index.html:798` - `window.onload = init`
+**Location:** `Merge2/index.html`
+
+**Entry Point:** Line 798 - `window.onload = init`
 
 **State Management:** Centralized object (lines 349-361)
 ```javascript
@@ -111,6 +116,8 @@ let state = {
 
 ### Fashion Match
 
+**File:** `FashionMatch/index.html`
+
 **Modify grid size:**
 - Update `ROWS` and `COLS` constants (lines 123-124)
 - Adjust canvas dimensions in CSS (lines 30-34)
@@ -125,6 +132,8 @@ let state = {
 - Score multiplier: `processMatches()` (lines 320-362)
 
 ### Merge2
+
+**File:** `Merge2/index.html`
 
 **Modify item levels:**
 - Edit `SVG_LIB` object (lines 332-341)
@@ -149,6 +158,15 @@ let state = {
 - Edit `createTasks()` function (lines 677-750)
 - Task structure: `{ id, desc, targetLevel, targetCount, reward }`
 
+### Navigation Page
+
+**File:** `index.html` (root)
+
+Simple landing page with game cards. To add a new game:
+1. Create new game folder with `index.html`
+2. Add game card to navigation page
+3. Update this documentation
+
 ## Code Style
 
 ### Fashion Match
@@ -162,6 +180,12 @@ let state = {
 - Arrow functions preferred
 - Template literals for strings
 - Imperative DOM manipulation (`innerHTML`, `classList`, `style`)
+
+### Navigation Page
+- Inline CSS (no external dependencies)
+- Gradient background
+- Card-based responsive layout
+- Mobile-first design
 
 ## Technical Notes
 
@@ -181,41 +205,37 @@ let state = {
 - Story-driven progression
 - Dependencies: Tailwind CSS, GSAP (both via CDN)
 
-### Shell Scripts (Merge2 only)
-
-**start.sh features:**
-- Automatic `npm install` if needed
-- PID management (prevents duplicate servers)
-- Port conflict detection
-- Auto-open browser
-- Background process with logging to `server.log`
-- Uses `npx http-server` directly to avoid port duplication issues
-
-**stop.sh features:**
-- Graceful server shutdown
-- PID cleanup
-
-**Note:** The script uses `npx http-server` directly instead of npm scripts to allow dynamic port configuration.
-
 ## File Structure
 
 ```
 GameStorm/
-├── index.html              # Fashion Match game (434 lines)
+├── index.html              # Navigation/landing page
+├── package.json            # Dev dependencies (http-server)
+├── start.sh                # Server startup script
+├── stop.sh                 # Server shutdown script
+├── .server.pid             # Server PID file (generated)
+├── server.log              # Server log file (generated)
+├── node_modules/           # Dependencies (generated)
+├── .gitignore              # Git ignore rules
 ├── CLAUDE.md               # This file
-└── Merge2/
-    ├── index.html          # Merge2 game (799 lines)
-    ├── package.json        # Dev dependencies (http-server)
-    ├── start.sh            # Server startup script
-    ├── stop.sh             # Server shutdown script
-    ├── README.md           # Project documentation
-    ├── CLAUDE.md           # Merge2-specific guide
-    └── node_modules/       # Dependencies (http-server)
+├── FashionMatch/           # Fashion Match game folder
+│   └── index.html          # Game file (434 lines)
+└── Merge2/                 # Merge2 game folder
+    ├── index.html          # Game file (799 lines)
+    ├── CLAUDE.md           # Game-specific architecture docs
+    └── README.md           # Game description
 ```
+
+**Key Design Decisions:**
+- All deployment infrastructure at root level
+- Game folders contain ONLY game files (HTML, assets)
+- Single `npm install` at root serves all games
+- Single server instance serves all games
+- Easy to add new games (create folder + add to navigation)
 
 ## Common Patterns
 
-### Adding New Features
+### Adding New Features to Games
 
 Both games follow similar patterns for new features:
 
@@ -228,6 +248,13 @@ Both games follow similar patterns for new features:
    - Fashion Match: Add methods to `Game` class
    - Merge2: Add functions or extend `Animator` object
 4. **Test in browser** - No build step needed, just refresh
+
+### Adding New Games
+
+1. Create new folder in root (e.g., `NewGame/`)
+2. Add `index.html` with game code
+3. Update root `index.html` to add game card
+4. Update this CLAUDE.md with game documentation
 
 ### Debugging
 
@@ -249,3 +276,4 @@ Both games use browser DevTools:
 - GSAP handles animation performance
 - Minimize `renderGrid()` calls
 - Use CSS transforms for smooth drag feedback
+

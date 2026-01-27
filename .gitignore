@@ -16,3 +16,16 @@ Thumbs.db
 *.swp
 *.swo
 *~
+
+# Node.js
+node_modules/
+package-lock.json
+
+# Server files
+.server.pid
+server.log
+nohup.out
+
+# Logs
+*.log
+logs/

@@ -1,13 +1,13 @@
 {
-  "name": "merge2-game",
+  "name": "gamestorm",
   "version": "1.0.0",
-  "description": "时尚逆袭：璀璨之星 - HTML5 Merge Puzzle Game",
+  "description": "GameStorm - HTML5 游戏合集",
   "scripts": {
     "start": "http-server -p 8000 -o",
     "dev": "http-server -p 8000 -o -c-1",
     "serve": "http-server -p 8000"
   },
-  "keywords": ["game", "merge", "html5"],
+  "keywords": ["game", "html5", "merge", "match3"],
   "author": "",
   "license": "MIT",
   "devDependencies": {
