@@ -282,6 +282,101 @@
             pointer-events: none;
         }
 
+        .story-notification {
+            position: absolute;
+            top: 15%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: linear-gradient(135deg, #FF4D94, #9D6BFF);
+            color: white;
+            padding: 15px 30px;
+            border-radius: 20px;
+            border: 3px solid var(--accent-gold);
+            font-weight: bold;
+            z-index: 300;
+            opacity: 0;
+            pointer-events: none;
+            box-shadow: 0 8px 20px rgba(0,0,0,0.3), 0 0 20px var(--accent-gold);
+            text-align: center;
+            max-width: 80%;
+        }
+
+        .story-notification .title {
+            font-size: 1.2rem;
+            margin-bottom: 5px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+
+        .story-notification .subtitle {
+            font-size: 0.85rem;
+            opacity: 0.9;
+        }
+
+        .story-progress-panel {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: white;
+            border: 4px solid var(--border-ink);
+            border-radius: 24px;
+            padding: 20px;
+            max-width: 90%;
+            max-height: 70%;
+            overflow-y: auto;
+            z-index: 600;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            display: none;
+        }
+
+        .story-item {
+            padding: 12px;
+            margin: 8px 0;
+            border-radius: 12px;
+            border: 2px solid var(--border-ink);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .story-item.unlocked {
+            background: linear-gradient(135deg, #FFE4EE, #FFF5F8);
+        }
+
+        .story-item.locked {
+            background: #f0f0f0;
+            opacity: 0.6;
+        }
+
+        .story-item .icon {
+            font-size: 2rem;
+            flex-shrink: 0;
+        }
+
+        .story-item .content {
+            flex: 1;
+        }
+
+        .story-item .name {
+            font-weight: bold;
+            color: var(--primary-pink);
+            margin-bottom: 4px;
+        }
+
+        .story-item .trigger {
+            font-size: 0.75rem;
+            color: #666;
+        }
+
+        #story-capsule.has-new {
+            animation: capsule-glow 1.5s infinite;
+        }
+
+        @keyframes capsule-glow {
+            0%, 100% { box-shadow: 0 4px 0 var(--border-ink); }
+            50% { box-shadow: 0 4px 0 var(--border-ink), 0 0 15px var(--accent-gold); }
+        }
+
         .btn-ready-animate {
             animation: btn-flash 1s infinite alternate;
         }
@@ -301,6 +396,9 @@
         <div class="stat-capsule"><span style="color:#FF4D94">⚡</span><span id="energy">100</span></div>
         <div id="gold-capsule" class="stat-capsule"><span style="color:#FFD700">💰</span><span id="gold">0</span></div>
         <div class="stat-capsule"><span style="color:#9D6BFF">⭐</span><span id="lv">1</span></div>
+        <div id="story-capsule" class="stat-capsule" onclick="showStoryProgress()" title="查看剧情进度" style="cursor:pointer;">
+            <span style="color:#FF1493">📖</span><span id="story-count">1/8</span>
+        </div>
     </header>
 
     <div class="task-container" id="task-list"></div>
@@ -321,8 +419,20 @@
         <div class="dialog">
             <h3 id="char-name" class="font-bold text-pink-600 text-xl mb-2 italic">苏菲</h3>
             <p id="dialog-text" class="text-gray-800 text-lg leading-snug"></p>
+            <p id="dialog-hint" class="text-gray-600 text-sm mt-3 italic"></p>
             <button onclick="closeStory()" class="mt-6 w-full bg-pink-500 text-white py-3 rounded-xl border-4 border-black font-bold text-xl shadow-[0_5px_0_#000]">准备好了！</button>
         </div>
+    </div>
+
+    <div id="story-notification" class="story-notification">
+        <div class="title">🎭 新剧情解锁！</div>
+        <div class="subtitle">点击查看</div>
+    </div>
+
+    <div id="story-progress-panel" class="story-progress-panel">
+        <h2 style="font-weight: bold; font-size: 1.5rem; margin-bottom: 15px; color: var(--primary-pink);">📖 剧情进度</h2>
+        <div id="story-list"></div>
+        <button onclick="closeStoryProgress()" class="mt-4 w-full bg-pink-500 text-white py-2 rounded-xl border-3 border-black font-bold shadow-[0_4px_0_#000]">关闭</button>
     </div>
 
     <div id="toast" class="toast">体力不足！</div>
@@ -357,13 +467,61 @@
         pointerId: null,
         knownTaskIds: new Set(),
         isAnimatingTask: false,
-        pendingSlots: new Set()
+        pendingSlots: new Set(),
+        storyProgress: 0,  // 当前剧情进度
+        unlockedStories: new Set([0]),  // 已解锁的剧情
+        maxLevelAchieved: 1  // 达成的最高等级物品
     };
 
     const stories = [
-        { name: "苏菲", text: "即使在二手店打工，我也从未放弃我的设计师梦。今天先从整理这些基础配饰开始吧！" },
-        { name: "面试官", text: "想要参加时尚周？先证明你的眼光。帮我搭配出一套完美的香氛礼盒。" },
-        { name: "璀璨之路", text: "不可思议！苏菲，你竟然合成了传闻中的‘星光皇冠’。你准备好走上T台了吗？" }
+        {
+            name: "苏菲",
+            text: "即使在二手店打工，我也从未放弃我的设计师梦。今天先从整理这些基础配饰开始吧！",
+            trigger: "游戏开始",
+            hint: "💡 提示：合成更高级的物品来完成订单，赚取金币！"
+        },
+        {
+            name: "店长艾米",
+            text: "苏菲，你的搭配眼光不错！刚才有位神秘客人留下了一张时尚周的邀请函...但需要500金币的入场费。",
+            trigger: "金币达到 300",
+            hint: "💡 下一章：继续完成订单，积累到500金币"
+        },
+        {
+            name: "面试官",
+            text: "想要参加时尚周？先证明你的眼光。帮我搭配出一套完美的香氛礼盒（3级物品）。",
+            trigger: "金币达到 500",
+            hint: "💡 下一章：合成3级香水瓶来证明实力"
+        },
+        {
+            name: "苏菲",
+            text: "太好了！我通过了初选。但真正的挑战才刚开始...我需要准备一套完整的配饰系列。",
+            trigger: "首次合成 3级物品",
+            hint: "💡 下一章：继续提升，金币达到1200解锁新剧情"
+        },
+        {
+            name: "设计师导师",
+            text: "年轻人，我看到了你的潜力。但时尚界不只需要基础功，你需要掌握高级定制的艺术。试着合成5级礼服吧。",
+            trigger: "金币达到 1200",
+            hint: "💡 下一章：合成5级橙色礼服"
+        },
+        {
+            name: "时尚杂志主编",
+            text: "苏菲的设计开始在圈内引起关注...但要登上封面，你需要创造出传说中的'星光皇冠'（8级物品）。",
+            trigger: "首次合成 5级物品",
+            hint: "💡 终极挑战：合成8级星光皇冠！"
+        },
+        {
+            name: "璀璨之路",
+            text: "不可思议！苏菲，你竟然合成了传闻中的'星光皇冠'。T台的聚光灯已经为你点亮，你准备好成为璀璨之星了吗？",
+            trigger: "首次合成 8级物品",
+            hint: "🎉 恭喜通关！继续游戏挑战更高分数"
+        },
+        {
+            name: "时尚传奇",
+            text: "从二手店店员到时尚界的新星，苏菲用实力证明了梦想的力量。但这只是开始...更多的挑战在等待着你！",
+            trigger: "金币达到 3000",
+            hint: "🌟 你已成为时尚大师！"
+        }
     ];
 
     function init() {
@@ -608,9 +766,13 @@
                 const itemEl = targetCell.querySelector('.item');
                 if (itemEl) Animator.mergeJuice(itemEl);
             }, 10);
-            if (sLv + 1 === 8) showStory(2);
+
+            // 记录最高等级成就
+            if (sLv + 1 > state.maxLevelAchieved) {
+                state.maxLevelAchieved = sLv + 1;
+                checkStoryTriggers();
+            }
         }
-        // 合并后，需要更新所有任务的状态，因为可能原本满足的任务现在不满足了，或者反之
         updateTaskStatuses();
     }
 
@@ -784,14 +946,144 @@
             Animator.itemSuccessClone(targetItemRect, itemLvl);
             
             Animator.flyGold(btnRect.left + btnRect.width/2, btnRect.top + btnRect.height/2);
-            
+
             refreshUI();
-            if (state.gold > state.level * 1200) { state.level++; showStory(1); }
+            checkStoryTriggers();
         } else showToast("还没合成该物品哦！");
     }
 
-    function refreshUI() { document.getElementById('energy').innerText = state.energy; document.getElementById('gold').innerText = state.gold; document.getElementById('lv').innerText = state.level; }
-    function showStory(idx) { const s = stories[idx]; if (!s) return; document.getElementById('story-mask').style.display = 'flex'; document.getElementById('char-name').innerText = s.name; document.getElementById('dialog-text').innerText = s.text; }
+    function checkStoryTriggers() {
+        let triggered = false;
+
+        // 检查各种触发条件
+        if (state.gold >= 300 && !state.unlockedStories.has(1)) {
+            unlockStory(1);
+            triggered = true;
+        }
+        if (state.gold >= 500 && !state.unlockedStories.has(2)) {
+            unlockStory(2);
+            triggered = true;
+        }
+        if (state.maxLevelAchieved >= 3 && !state.unlockedStories.has(3)) {
+            unlockStory(3);
+            triggered = true;
+        }
+        if (state.gold >= 1200 && !state.unlockedStories.has(4)) {
+            unlockStory(4);
+            triggered = true;
+        }
+        if (state.maxLevelAchieved >= 5 && !state.unlockedStories.has(5)) {
+            unlockStory(5);
+            triggered = true;
+        }
+        if (state.maxLevelAchieved >= 8 && !state.unlockedStories.has(6)) {
+            unlockStory(6);
+            triggered = true;
+        }
+        if (state.gold >= 3000 && !state.unlockedStories.has(7)) {
+            unlockStory(7);
+            triggered = true;
+        }
+
+        // 更新等级系统
+        const newLevel = Math.floor(state.gold / 1200) + 1;
+        if (newLevel > state.level) {
+            state.level = newLevel;
+        }
+    }
+
+    function unlockStory(index) {
+        state.unlockedStories.add(index);
+        state.storyProgress = index;
+
+        // 显示解锁通知
+        const notification = document.getElementById('story-notification');
+        gsap.to(notification, {
+            opacity: 1,
+            y: 20,
+            duration: 0.5,
+            ease: "back.out(1.7)",
+            onComplete: () => {
+                setTimeout(() => {
+                    gsap.to(notification, { opacity: 0, y: 0, duration: 0.3 });
+                }, 2000);
+            }
+        });
+
+        // 故事书图标发光提示
+        const storyCapsule = document.getElementById('story-capsule');
+        storyCapsule.classList.add('has-new');
+
+        // 延迟显示剧情对话
+        setTimeout(() => {
+            showStory(index);
+        }, 2500);
+
+        updateStoryUI();
+    }
+
+    function showStoryProgress() {
+        const panel = document.getElementById('story-progress-panel');
+        const list = document.getElementById('story-list');
+
+        list.innerHTML = '';
+        stories.forEach((story, idx) => {
+            const isUnlocked = state.unlockedStories.has(idx);
+            const item = document.createElement('div');
+            item.className = `story-item ${isUnlocked ? 'unlocked' : 'locked'}`;
+            item.innerHTML = `
+                <div class="icon">${isUnlocked ? '✅' : '🔒'}</div>
+                <div class="content">
+                    <div class="name">${isUnlocked ? story.name : '???'}</div>
+                    <div class="trigger">${story.trigger}</div>
+                    ${isUnlocked ? `<div style="font-size: 0.85rem; margin-top: 4px;">${story.text}</div>` : ''}
+                </div>
+            `;
+            if (isUnlocked) {
+                item.style.cursor = 'pointer';
+                item.onclick = () => {
+                    closeStoryProgress();
+                    setTimeout(() => showStory(idx), 300);
+                };
+            }
+            list.appendChild(item);
+        });
+
+        panel.style.display = 'block';
+        gsap.from(panel, { scale: 0.8, opacity: 0, duration: 0.3, ease: "back.out(1.7)" });
+
+        // 移除发光效果
+        document.getElementById('story-capsule').classList.remove('has-new');
+    }
+
+    function closeStoryProgress() {
+        const panel = document.getElementById('story-progress-panel');
+        gsap.to(panel, {
+            scale: 0.8,
+            opacity: 0,
+            duration: 0.2,
+            onComplete: () => { panel.style.display = 'none'; }
+        });
+    }
+
+    function updateStoryUI() {
+        document.getElementById('story-count').innerText = `${state.unlockedStories.size}/${stories.length}`;
+    }
+
+    function refreshUI() {
+        document.getElementById('energy').innerText = state.energy;
+        document.getElementById('gold').innerText = state.gold;
+        document.getElementById('lv').innerText = state.level;
+        updateStoryUI();
+    }
+    function showStory(idx) {
+        const s = stories[idx];
+        if (!s) return;
+        document.getElementById('story-mask').style.display = 'flex';
+        document.getElementById('char-name').innerText = s.name;
+        document.getElementById('dialog-text').innerText = s.text;
+        document.getElementById('dialog-hint').innerText = s.hint || '';
+    }
     function closeStory() { document.getElementById('story-mask').style.display = 'none'; }
     function showToast(msg) { const t = document.getElementById('toast'); t.innerText = msg; gsap.to(t, { opacity: 1, y: -20, duration: 0.3 }); setTimeout(() => gsap.to(t, { opacity: 0, y: 0, duration: 0.3 }), 2000); }
     window.onload = init;
