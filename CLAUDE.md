@@ -10,6 +10,7 @@ GameStorm is a collection of HTML5 mobile mini games built with vanilla JavaScri
 2. **Merge2** (时尚逆袭：璀璨之星) - `Merge2/index.html` - Merge puzzle game
 3. **MagicBean** (魔豆登天) - `MagicBean/index.html` - Vertical platformer game
 4. **JumpUp** (跳跳芭蕉树) - `JumpUp/index.html` - Vertical jumping game
+5. **Rookie Rise** (菜鸟崛起) - `RookieRise/index.html` - Half-court shooting + story campaign
 
 All games use a **single-file architecture** with no build system. All HTML, CSS, and JavaScript are contained in their respective `index.html` files.
 
@@ -35,6 +36,7 @@ Server runs on http://localhost:8000 and serves:
 - Merge2: http://localhost:8000/Merge2/
 - MagicBean: http://localhost:8000/MagicBean/
 - JumpUp: http://localhost:8000/JumpUp/
+- Rookie Rise: http://localhost:8000/RookieRise/
 
 **Shell Scripts Features:**
 - Automatic dependency installation
@@ -48,15 +50,15 @@ Server runs on http://localhost:8000 and serves:
 
 ### Different Approaches
 
-| Aspect | Fashion Match | Merge2 | MagicBean | JumpUp |
-|--------|--------------|--------|-----------|--------|
-| **File** | `FashionMatch/index.html` (434 lines) | `Merge2/index.html` (799 lines) | `MagicBean/index.html` | `JumpUp/index.html` |
-| **Pattern** | Class-based OOP | Imperative + Functional modules | Class-based OOP | Imperative + Functional modules |
-| **Rendering** | HTML5 Canvas 2D API | DOM manipulation | HTML5 Canvas 2D API | HTML5 Canvas 2D API |
-| **Animation** | Manual (requestAnimationFrame) | GSAP 3.12.2 library | Mixed (Lerp + rAF) | Manual (requestAnimationFrame) |
-| **Styling** | Inline CSS | Tailwind CSS (CDN) | Inline CSS | Inline CSS |
-| **Graphics** | Emoji characters | Inline SVG library | HTML5 Canvas Shapes | HTML5 Canvas Shapes |
-| **Grid** | 7×9 (63 cells) | 6×7 (42 cells) | Infinite Vertical | Infinite Vertical |
+| Aspect | Fashion Match | Merge2 | MagicBean | JumpUp | Rookie Rise |
+|--------|--------------|--------|-----------|--------|------------|
+| **File** | `FashionMatch/index.html` (434 lines) | `Merge2/index.html` (799 lines) | `MagicBean/index.html` | `JumpUp/index.html` | `RookieRise/index.html` |
+| **Pattern** | Class-based OOP | Imperative + Functional modules | Class-based OOP | Imperative + Functional modules | State machine + modules |
+| **Rendering** | HTML5 Canvas 2D API | DOM manipulation | HTML5 Canvas 2D API | HTML5 Canvas 2D API | Canvas 2D + 3D 投射 |
+| **Animation** | Manual (requestAnimationFrame) | GSAP 3.12.2 library | Mixed (Lerp + rAF) | Manual (requestAnimationFrame) | Manual (requestAnimationFrame) |
+| **Styling** | Inline CSS | Tailwind CSS (CDN) | Inline CSS | Inline CSS | Inline CSS（欧美卡通 UI） |
+| **Graphics** | Emoji characters | Inline SVG library | HTML5 Canvas Shapes | HTML5 Canvas Shapes | Cartoon court + bold outlines |
+| **Grid** | 7×9 (63 cells) | 6×7 (42 cells) | Infinite Vertical | Infinite Vertical | 半场坐标系（x/z/y） |
 
 ### Fashion Match Architecture
 

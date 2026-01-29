@@ -17,6 +17,7 @@
 | Merge2（时尚逆袭：璀璨之星） | `Merge2/` | 拖拽合成 + 任务系统（DOM + 动画） |
 | MagicBean（魔豆登天） | `MagicBean/` | 向上攀登的平台挑战（Canvas 2D） |
 | JumpUp（跳跳芭蕉树） | `JumpUp/` | 左右跳跃闯关（Canvas 2D） |
+| Rookie Rise（菜鸟崛起） | `RookieRise/` | 半场投篮 + 剧情成长（Canvas 2D / 伪 3D 投射） |
 
 对应的导航入口维护在根目录 `index.html`。
 
@@ -29,6 +30,7 @@
 ├── Merge2/               # 游戏：合成玩法（含 Merge2/README.md）
 ├── MagicBean/            # 游戏：魔豆登天
 ├── JumpUp/               # 游戏：跳跳芭蕉树
+├── RookieRise/           # 游戏：菜鸟崛起（投篮 + 剧情）
 ├── start.sh / stop.sh    # 启停本地静态服务器
 ├── package.json          # http-server 开发依赖
 └── CLAUDE.md             # 项目架构/开发说明（更偏实现细节）
@@ -73,4 +75,3 @@ npm run serve   # 仅启动服务，不自动打开浏览器
 ## License
 
 MIT
-
