@@ -1031,18 +1031,150 @@
       }
 
       function autoAimVelocityAndChance(fromPos) {
-        // 自动瞄准：计算“能打到篮筐附近”的基础速度，并按距离给出命中概率
+        // 自动瞄准：用“带空气阻力的解析解”初速度 + 数值校准，确保真实过框
         const d = Math.hypot(fromPos.x - WORLD.HOOP.x, fromPos.z - WORLD.HOOP.z);
         const dist01 = clamp((d - 2.0) / 10.0, 0, 1);
-        const chance = clamp(0.98 - dist01 * 0.22, 0.70, 0.99);
+        const chance = 1;
 
-        // 自动投篮：需要给出更高的过框高度，抵消空气阻力/碰撞导致的“打下沿”
-        const T = lerp(0.72, 1.15, dist01);
-        const targetLift = lerp(0.45, 0.60, dist01);
-        const target = vec3(WORLD.HOOP.x, WORLD.HOOP.y + targetLift, WORLD.HOOP.z);
-        const vx = (target.x - fromPos.x) / T;
-        const vz = (target.z - fromPos.z) / T;
-        const vy = (target.y - fromPos.y - 0.5 * PHYS.G * T * T) / T;
+        const kx = PHYS.AIR_DRAG;
+        const ky = PHYS.AIR_DRAG * 0.3;
+        const solveV0 = (d0, t, k) => {
+          if (k < 1e-6) return d0 / t;
+          const e = Math.exp(-k * t);
+          return d0 * k / (1 - e);
+        };
+        const solveV0Y = (d0, t, k, g) => {
+          if (k < 1e-6) return (d0 - 0.5 * g * t * t) / t;
+          const e = Math.exp(-k * t);
+          return (d0 * k - g * t) / (1 - e) + g / k;
+        };
+
+        const evaluateShot = (v0, tMax) => {
+          const pos = vec3(fromPos.x, fromPos.y, fromPos.z);
+          const vel = vec3(v0.x, v0.y, v0.z);
+          let prev = vec3(pos.x, pos.y, pos.z);
+          let prevY = pos.y;
+          const dt = 1 / 120;
+          for (let t = 0; t < tMax; t += dt) {
+            vel.x *= 1 - PHYS.AIR_DRAG * dt;
+            vel.y *= 1 - PHYS.AIR_DRAG * dt * 0.3;
+            vel.z *= 1 - PHYS.AIR_DRAG * dt;
+            vel.y += PHYS.G * dt;
+            pos.x += vel.x * dt;
+            pos.y += vel.y * dt;
+            pos.z += vel.z * dt;
+            if (prevY > WORLD.HOOP.y && pos.y <= WORLD.HOOP.y) {
+              const tFrac = (prevY - WORLD.HOOP.y) / Math.max(1e-6, (prevY - pos.y));
+              const x = prev.x + (pos.x - prev.x) * tFrac;
+              const z = prev.z + (pos.z - prev.z) * tFrac;
+              const r = Math.hypot(x - WORLD.HOOP.x, z - WORLD.HOOP.z);
+              return r;
+            }
+            prev = vec3(pos.x, pos.y, pos.z);
+            prevY = pos.y;
+          }
+          return Infinity;
+        };
+
+        const simulateScore = (v0) => {
+          const ball = {
+            pos: vec3(fromPos.x, fromPos.y, fromPos.z),
+            vel: vec3(v0.x, v0.y, v0.z),
+            prevY: fromPos.y,
+          };
+          const dt = 1 / 120;
+          const tMax = 2.6;
+          for (let t = 0; t < tMax; t += dt) {
+            ball.prevY = ball.pos.y;
+
+            ball.vel.x *= 1 - PHYS.AIR_DRAG * dt;
+            ball.vel.y *= 1 - PHYS.AIR_DRAG * dt * 0.3;
+            ball.vel.z *= 1 - PHYS.AIR_DRAG * dt;
+            ball.vel.y += PHYS.G * dt;
+
+            ball.pos.x += ball.vel.x * dt;
+            ball.pos.y += ball.vel.y * dt;
+            ball.pos.z += ball.vel.z * dt;
+
+            // 篮板碰撞（与实机一致）
+            const bz = WORLD.BACKBOARD_Z;
+            const inBoardX = Math.abs(ball.pos.x - WORLD.HOOP.x) <= WORLD.BACKBOARD_W * 0.5 + WORLD.BALL_R;
+            const inBoardY = ball.pos.y >= WORLD.BACKBOARD_Y0 - WORLD.BALL_R &&
+              ball.pos.y <= WORLD.BACKBOARD_Y0 + WORLD.BACKBOARD_H + WORLD.BALL_R;
+            const crossedBoard = ball.pos.z - bz <= WORLD.BALL_R && (ball.pos.z - ball.vel.z * dt) - bz > WORLD.BALL_R;
+            if (crossedBoard && inBoardX && inBoardY) {
+              ball.pos.z = bz + WORLD.BALL_R;
+              ball.vel.z = -ball.vel.z * PHYS.BOARD_REST;
+              ball.vel.x *= 0.97;
+            }
+
+            // 篮筐碰撞（离散点近似）
+            for (const p of rimPoints) {
+              resolveSpherePoint(ball, p, 0.03, PHYS.RIM_REST, PHYS.TANGENT_FRICTION, null);
+            }
+
+            // 进球判定（与实机一致）
+            const y0 = ball.prevY;
+            const y1 = ball.pos.y;
+            if (y0 > WORLD.HOOP.y + 0.02 && y1 <= WORLD.HOOP.y - 0.02) {
+              const dx = ball.pos.x - WORLD.HOOP.x;
+              const dz = ball.pos.z - WORLD.HOOP.z;
+              const r = Math.hypot(dx, dz);
+              if (r <= WORLD.RIM_R - WORLD.BALL_R * 0.35) {
+                return true;
+              }
+            }
+
+            if (ball.pos.y < WORLD.BALL_R - 0.2) break;
+          }
+          return false;
+        };
+
+        const T0 = lerp(0.78, 1.20, dist01);
+        const lift0 = lerp(0.60, 0.85, dist01);
+        let best = { r: Infinity, v: null };
+        const tMin = Math.max(0.6, T0 - 0.18);
+        const tMax = T0 + 0.28;
+        const liftMin = Math.max(0.45, lift0 - 0.12);
+        const liftMax = lift0 + 0.28;
+        const tSteps = 6;
+        const lSteps = 6;
+
+        for (let i = 0; i <= tSteps; i++) {
+          const T = lerp(tMin, tMax, i / tSteps);
+          for (let j = 0; j <= lSteps; j++) {
+            const lift = lerp(liftMin, liftMax, j / lSteps);
+            const target = vec3(WORLD.HOOP.x, WORLD.HOOP.y + lift, WORLD.HOOP.z);
+            const dx = target.x - fromPos.x;
+            const dz = target.z - fromPos.z;
+            const dy = target.y - fromPos.y;
+            const vx = solveV0(dx, T, kx);
+            const vz = solveV0(dz, T, kx);
+            const vy = solveV0Y(dy, T, ky, PHYS.G);
+            const v0 = vec3(vx, vy, vz);
+            if (simulateScore(v0)) {
+              return { vel: v0, chance, dist01 };
+            }
+            const r = evaluateShot(v0, T + 0.6);
+            const safeR = WORLD.RIM_R - WORLD.BALL_R * 0.6;
+            const penalty = r > safeR ? (r - safeR) * 3.0 : 0;
+            const score = r + penalty;
+            if (score < best.r) best = { r: score, v: v0 };
+          }
+        }
+
+        if (best.v) {
+          return { vel: best.v, chance, dist01 };
+        }
+
+        // 回退：解析解直接命中篮心
+        const target = vec3(WORLD.HOOP.x, WORLD.HOOP.y + lift0, WORLD.HOOP.z);
+        const dx = target.x - fromPos.x;
+        const dz = target.z - fromPos.z;
+        const dy = target.y - fromPos.y;
+        const vx = solveV0(dx, T0, kx);
+        const vz = solveV0(dz, T0, kx);
+        const vy = solveV0Y(dy, T0, ky, PHYS.G);
         return { vel: vec3(vx, vy, vz), chance, dist01 };
       }
 
