@@ -35,7 +35,6 @@
         linear-gradient(135deg, var(--bg1), var(--bg2));
       font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
       color: white;
-      touch-action: none;
       user-select: none;
     }
 
@@ -60,6 +59,8 @@
     }
 
     header {
+      position: relative;
+      z-index: 3;
       display: flex;
       align-items: center;
       justify-content: space-between;
@@ -135,6 +136,7 @@
     button {
       appearance: none;
       border: none;
+      touch-action: manipulation;
       background: linear-gradient(180deg, rgba(255, 255, 255, 0.2), rgba(255, 255, 255, 0.06));
       color: white;
       border: 2px solid rgba(255, 255, 255, 0.18);
@@ -165,6 +167,8 @@
     #canvasWrap {
       position: relative;
       flex: 1;
+      z-index: 1;
+      touch-action: none;
       border-radius: 18px;
       overflow: hidden;
       background: rgba(0, 0, 0, 0.18);
@@ -177,6 +181,7 @@
       display: block;
       width: 100%;
       height: 100%;
+      touch-action: none;
     }
 
     #hint {
@@ -364,8 +369,7 @@
       <div id="canvasWrap">
         <canvas id="c"></canvas>
         <div id="hint">
-          操作：<b>手指滑动</b>。起点会生成篮球；滑动方向=投篮方向；滑动速度=投篮力度。<br />
-          当前设定：<b>只能朝篮筐方向出手</b>（左右滑动微调准星），滑动距离/速度决定力度。<br />
+          操作：<b>快速点击</b>自动瞄准投篮（距离越远命中率越低）；<b>按住拖动再松手</b>手势投篮（左右方向=水平偏移，弧度力量=向上拖动）。<br />
           计分：三分线内 2 分，三分线外 3 分。限时达成目标即可触发新剧情并进入下一场。
         </div>
 
@@ -584,9 +588,12 @@
           st: 0,
           cx: 0,
           cy: 0,
+          moved: 0,
+          startWorld: null,
           previewBall: null,
         },
         balls: [],
+        effects: [],
         lastTs: 0,
         lastTick: 0,
       };
@@ -596,8 +603,8 @@
       const ctx = canvas.getContext("2d");
 
       const camera = {
-        pos: vec3(0, 3.6, WORLD.COURT_L + 8.5),
-        target: vec3(0, 3.0, 0.0),
+        pos: vec3(0.0, 4.8, WORLD.COURT_L + 4.2),
+        target: vec3(0.0, 3.05, 0.0),
         up: vec3(0, 1, 0),
         f: 900,
         basis: null,
@@ -964,7 +971,12 @@
         );
       }
 
-      function swipeToVelocity(sx, sy, ex, ey, dtMs, fromPos) {
+      const INPUT = Object.freeze({
+        TAP_MAX_MS: 170,
+        TAP_MAX_PX: 12,
+      });
+
+      function swipeToVelocity(sx, sy, ex, ey, dtMs, fromPos, preview = false) {
         const dx = ex - sx;
         const dy = ey - sy;
         const dist = Math.hypot(dx, dy);
@@ -976,42 +988,62 @@
           return t * t * (3 - 2 * t);
         };
 
-        // 力量：用更贴近手感的非线性曲线（慢滑也能投，快滑更有力但不会失控）
-        const power01 = Math.pow(smoothstep(520, 2600, speedPx), 0.78);
+        // 手势投篮：x 偏移控制左右方向，y 偏移控制弧度/力量
+        const rect = canvas.getBoundingClientRect();
+        const maxDx = Math.max(140, rect.width * 0.45);
+        const maxDy = Math.max(160, rect.height * 0.6);
+        const dx01 = clamp(dx / maxDx, -1, 1);
+        const dyUp = clamp(sy - ey, 0, maxDy);
+        const pLen = smoothstep(10, maxDy, dyUp);
+        const pSpd = smoothstep(420, 2400, speedPx);
+        const power01 = Math.pow(clamp(pLen * 0.75 + pSpd * 0.25, 0, 1), 0.9);
+
+        const baseDir = vnorm(vec3(WORLD.HOOP.x - fromPos.x, 0, WORLD.HOOP.z - fromPos.z));
+        const maxAngle = Math.PI * 0.16;
+        const ang = dx01 * maxAngle;
+        const cosA = Math.cos(ang);
+        const sinA = Math.sin(ang);
+        const dir = vnorm(vec3(baseDir.x * cosA - baseDir.z * sinA, 0, baseDir.x * sinA + baseDir.z * cosA));
 
         // 距离补偿：投得更远，需要更高的初速度/弧线
         const d = Math.hypot(fromPos.x - WORLD.HOOP.x, fromPos.z - WORLD.HOOP.z);
         const distFactor = clamp((d - 2.5) / 10.0, 0, 1);
 
-        // 只允许“朝篮筐方向”出手：方向基于篮筐向量，手势只负责“左右微调”
         const rating01 = clamp((state.rating - 50) / 50, 0, 1);
-        const toHoop = vnorm(vec3(WORLD.HOOP.x - fromPos.x, 0, WORLD.HOOP.z - fromPos.z));
-        const right = vnorm(vec3(-toHoop.z, 0, toHoop.x)); // xz 平面上的右方向
-        // 手机上更直觉：用“屏幕横向滑动”做左右准星微调（并修正左右反向问题）
-        const rect = canvas.getBoundingClientRect();
-        const lateral = clamp(-(dx / Math.max(1, rect.width * 0.40)), -1, 1);
-        const aimStrength = (0.55 + distFactor * 0.25) * lerp(0.55, 1.0, rating01);
-        const aim = lateral * 0.95 * aimStrength;
-        const blended = vnorm(vadd(toHoop, vmul(right, aim)));
-
-        // 命中散布：能力低/力量不足时更容易偏；强力出手略更稳
-        const maxErr = lerp(0.18, 0.05, rating01) + (1 - power01) * 0.05;
-        const err = (Math.random() * 2 - 1) * maxErr;
+        // 手势模式下，尽量少“自动修正”，只保留很轻微的散布（越强力、能力越高越稳）
+        const maxErr = (lerp(0.16, 0.05, rating01) + (1 - power01) * 0.06) * 0.7;
+        const err = 0;
         const cos = Math.cos(err);
         const sin = Math.sin(err);
-        const blendedErr = vnorm(vec3(blended.x * cos - blended.z * sin, 0, blended.x * sin + blended.z * cos));
+        const dirErr = vnorm(vec3(dir.x * cos - dir.z * sin, 0, dir.x * sin + dir.z * cos));
 
         // 水平初速度：根据力量和距离，限制上限避免“火箭球”
-        const baseH = lerp(8.8, 12.8, power01) + distFactor * 2.6;
-        const vH = clamp(baseH, 7.5, 16.0);
+        const baseH = lerp(7.0, 12.6, power01) + distFactor * 2.1;
+        const vH = clamp(baseH, 6.2, 16.8);
 
         // 垂直初速度：随距离更“抛”，随力量更高
-        const baseV = lerp(8.0, 13.6, power01) + distFactor * 3.6;
-        const vy = clamp(baseV, 7.2, 17.5);
+        const baseV = lerp(7.4, 16.2, power01) + distFactor * 3.4;
+        const vy = clamp(baseV, 6.8, 19.2);
 
-        const vx = blendedErr.x * vH;
-        const vz = blendedErr.z * vH;
+        const vx = dirErr.x * vH;
+        const vz = dirErr.z * vH;
         return vec3(vx, vy, vz);
+      }
+
+      function autoAimVelocityAndChance(fromPos) {
+        // 自动瞄准：计算“能打到篮筐附近”的基础速度，并按距离给出命中概率
+        const d = Math.hypot(fromPos.x - WORLD.HOOP.x, fromPos.z - WORLD.HOOP.z);
+        const dist01 = clamp((d - 2.0) / 10.0, 0, 1);
+        const chance = clamp(0.98 - dist01 * 0.22, 0.70, 0.99);
+
+        // 自动投篮：需要给出更高的过框高度，抵消空气阻力/碰撞导致的“打下沿”
+        const T = lerp(0.72, 1.15, dist01);
+        const targetLift = lerp(0.45, 0.60, dist01);
+        const target = vec3(WORLD.HOOP.x, WORLD.HOOP.y + targetLift, WORLD.HOOP.z);
+        const vx = (target.x - fromPos.x) / T;
+        const vz = (target.z - fromPos.z) / T;
+        const vy = (target.y - fromPos.y - 0.5 * PHYS.G * T * T) / T;
+        return { vel: vec3(vx, vy, vz), chance, dist01 };
       }
 
       function pointsForShot(fromPos) {
@@ -1027,6 +1059,8 @@
           vel: vec3(vel.x, vel.y, vel.z),
           points,
           held: false,
+          auto: false,
+          willMake: false,
           scored: false,
           alive: true,
           age: 0,
@@ -1045,6 +1079,15 @@
         }
         return pts;
       })();
+
+      function spawnImpact(pos, kind) {
+        state.effects.push({
+          pos: vec3(pos.x, pos.y, pos.z),
+          age: 0,
+          dur: 0.28,
+          kind,
+        });
+      }
 
       function resolveSpherePoint(ball, point, pointR, restitution, tangentFriction, sfx) {
         const dx = ball.pos.x - point.x;
@@ -1088,6 +1131,20 @@
         ball.vel.y *= 1 - PHYS.AIR_DRAG * dt * 0.3;
         ball.vel.z *= 1 - PHYS.AIR_DRAG * dt;
 
+        // 自动瞄准“概率命中”辅助：仅在接近篮筐、下落阶段轻微拉向篮心
+        if (ball.auto && ball.willMake && ball.vel.y < 0 && ball.pos.y > WORLD.HOOP.y - 0.35) {
+          const dx = WORLD.HOOP.x - ball.pos.x;
+          const dz = WORLD.HOOP.z - ball.pos.z;
+          const d = Math.hypot(dx, dz);
+          if (d < 3.0) {
+            const pull = clamp((3.0 - d) / 3.0, 0, 1);
+            const ax = (dx / Math.max(1e-6, d)) * (12.0 * pull);
+            const az = (dz / Math.max(1e-6, d)) * (12.0 * pull);
+            ball.vel.x += ax * dt;
+            ball.vel.z += az * dt;
+          }
+        }
+
         // 重力
         ball.vel.y += PHYS.G * dt;
 
@@ -1103,10 +1160,12 @@
           ball.pos.x = xMin;
           ball.vel.x = -ball.vel.x * PHYS.WALL_REST;
           audio.rim();
+          spawnImpact(ball.pos, "wall");
         } else if (ball.pos.x > xMax) {
           ball.pos.x = xMax;
           ball.vel.x = -ball.vel.x * PHYS.WALL_REST;
           audio.rim();
+          spawnImpact(ball.pos, "wall");
         }
 
         // 边界：前后（允许略过篮筐后方）
@@ -1116,10 +1175,12 @@
           ball.pos.z = zMin;
           ball.vel.z = -ball.vel.z * PHYS.WALL_REST;
           audio.rim();
+          spawnImpact(ball.pos, "wall");
         } else if (ball.pos.z > zMax) {
           ball.pos.z = zMax;
           ball.vel.z = -ball.vel.z * PHYS.WALL_REST;
           audio.rim();
+          spawnImpact(ball.pos, "wall");
         }
 
         // 地面
@@ -1144,11 +1205,18 @@
           ball.vel.z = -ball.vel.z * PHYS.BOARD_REST;
           ball.vel.x *= 0.97;
           audio.board();
+          spawnImpact(ball.pos, "board");
         }
 
         // 篮筐（离散点近似）
+        let rimHit = false;
         for (const p of rimPoints) {
-          resolveSpherePoint(ball, p, 0.03, PHYS.RIM_REST, PHYS.TANGENT_FRICTION, audio.rim);
+          if (resolveSpherePoint(ball, p, 0.03, PHYS.RIM_REST, PHYS.TANGENT_FRICTION, audio.rim)) {
+            rimHit = true;
+          }
+        }
+        if (rimHit) {
+          spawnImpact(ball.pos, "rim");
         }
 
         // 进球判定：从上穿过篮筐平面并落下
@@ -1158,7 +1226,10 @@
           const dx = ball.pos.x - WORLD.HOOP.x;
           const dz = ball.pos.z - WORLD.HOOP.z;
           const r = Math.hypot(dx, dz);
-          if (r <= WORLD.RIM_R - WORLD.BALL_R * 0.35) {
+          const scoreR = ball.auto && ball.willMake
+            ? WORLD.RIM_R + WORLD.BALL_R * 0.25
+            : WORLD.RIM_R - WORLD.BALL_R * 0.35;
+          if (r <= scoreR) {
             ball.scored = true;
             return "score";
           }
@@ -1461,16 +1532,56 @@
         ctx.restore();
       }
 
+      function drawEffects() {
+        if (!state.effects.length) return;
+        const colors = {
+          wall: "rgba(120, 200, 255, 1)",
+          rim: "rgba(255, 200, 120, 1)",
+          board: "rgba(255, 255, 255, 1)",
+        };
+        for (const fx of state.effects) {
+          const p = project(fx.pos);
+          if (!p) continue;
+          const t = clamp(fx.age / fx.dur, 0, 1);
+          const alpha = 1 - t;
+          const r = Math.max(6, canvas.width * 0.01) * lerp(0.6, 1.8, t);
+          ctx.save();
+          ctx.globalAlpha = alpha * 0.9;
+          ctx.strokeStyle = colors[fx.kind] || "rgba(255,255,255,1)";
+          ctx.lineWidth = Math.max(2, canvas.width * 0.002);
+          ctx.shadowColor = ctx.strokeStyle;
+          ctx.shadowBlur = 12;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.restore();
+        }
+      }
+
       function drawAim() {
         if (!state.aim.active) return;
         const rect = canvas.getBoundingClientRect();
-        const sx = state.aim.sx / rect.width * canvas.width;
-        const sy = state.aim.sy / rect.height * canvas.height;
-        const cx = state.aim.cx / rect.width * canvas.width;
-        const cy = state.aim.cy / rect.height * canvas.height;
+        const sx = state.aim.sx;
+        const sy = state.aim.sy;
+        const cx = state.aim.cx;
+        const cy = state.aim.cy;
 
-        const dx = cx - sx;
-        const dy = cy - sy;
+        const moved = state.aim.moved;
+        if (moved < 6) return;
+
+        // 用“真实投篮方向”画辅助线，避免手势方向与实际轨迹不一致
+        const dtMs = now() - state.aim.st;
+        const from = state.aim.startWorld || (screenToCourtWorld(sx, sy, WORLD.BALL_R) || screenToCourt(sx, sy));
+        const vel = swipeToVelocity(sx, sy, cx, cy, dtMs, from, true);
+        const dir = vnorm(vec3(vel.x, 0, vel.z));
+        const len = clamp(Math.hypot(vel.x, vel.z) * 0.18, 1.2, 3.5);
+
+        const p0 = project(vec3(from.x, WORLD.BALL_R, from.z));
+        const p1 = project(vec3(from.x + dir.x * len, WORLD.BALL_R, from.z + dir.z * len));
+        if (!p0 || !p1) return;
+
+        const dx = p1.x - p0.x;
+        const dy = p1.y - p0.y;
         const L = Math.hypot(dx, dy);
         if (L < 6) return;
 
@@ -1480,15 +1591,15 @@
         ctx.shadowColor = "rgba(0,0,0,0.35)";
         ctx.shadowBlur = 12;
         ctx.beginPath();
-        ctx.moveTo(sx, sy);
-        ctx.lineTo(cx, cy);
+        ctx.moveTo(p0.x, p0.y);
+        ctx.lineTo(p1.x, p1.y);
         ctx.stroke();
 
         // 箭头
         const ux = dx / L;
         const uy = dy / L;
-        const ax = cx;
-        const ay = cy;
+        const ax = p1.x;
+        const ay = p1.y;
         const head = Math.max(16, canvas.width * 0.02);
         ctx.beginPath();
         ctx.moveTo(ax, ay);
@@ -1521,10 +1632,12 @@
         if (!state.aim.active) return;
         if (!state.aim.previewBall) return;
         if (state.mode !== "match" || !state.match.running) return;
+        // 轻点（自动瞄准）不画预览
+        if (state.aim.moved <= INPUT.TAP_MAX_PX) return;
 
         const dtMs = now() - state.aim.st;
         const from = state.aim.startWorld || state.aim.previewBall.pos;
-        const vel = swipeToVelocity(state.aim.sx, state.aim.sy, state.aim.cx, state.aim.cy, dtMs, from);
+        const vel = swipeToVelocity(state.aim.sx, state.aim.sy, state.aim.cx, state.aim.cy, dtMs, from, true);
 
         // 简化弹道：不考虑碰撞，只做抛物线预估，足够用于“感觉”与瞄准
         const tMax = 1.4;
@@ -1633,6 +1746,11 @@
           state.balls = state.balls.filter((b) => b.alive);
         }
 
+        if (state.effects.length) {
+          for (const fx of state.effects) fx.age += dt;
+          state.effects = state.effects.filter((fx) => fx.age < fx.dur);
+        }
+
         render();
         requestAnimationFrame(tick);
       }
@@ -1655,6 +1773,7 @@
 
         for (const item of drawList) drawBall(item.b);
 
+        drawEffects();
         drawAim();
         drawScoreBanner();
       }
@@ -1703,6 +1822,7 @@
         state.aim.cy = p.y;
         state.aim.st = now();
         state.aim.startWorld = startWorld;
+        state.aim.moved = 0;
 
         try {
           canvasWrap.setPointerCapture(e.pointerId);
@@ -1724,6 +1844,7 @@
         const p = getLocalPoint(e);
         state.aim.cx = p.x;
         state.aim.cy = p.y;
+        state.aim.moved = Math.max(state.aim.moved, Math.hypot(state.aim.cx - state.aim.sx, state.aim.cy - state.aim.sy));
       }
 
       function onPointerUp(e) {
@@ -1746,11 +1867,35 @@
           preview.pos.y = pos.y;
           preview.pos.z = pos.z;
 
-          const vel = swipeToVelocity(sx, sy, ex, ey, dtMs, pos);
           preview.held = false;
-          preview.vel.x = vel.x;
-          preview.vel.y = vel.y;
-          preview.vel.z = vel.z;
+          const isTap = dtMs <= INPUT.TAP_MAX_MS && state.aim.moved <= INPUT.TAP_MAX_PX;
+          if (isTap) {
+            const { vel, chance, dist01 } = autoAimVelocityAndChance(pos);
+            preview.auto = true;
+            preview.willMake = Math.random() < chance;
+            // 未命中：加大水平偏差，让“远投更难”
+            if (!preview.willMake) {
+              const missAngle = lerp(0.10, 0.35, dist01) * (Math.random() < 0.5 ? -1 : 1);
+              const c = Math.cos(missAngle);
+              const s = Math.sin(missAngle);
+              const vx = vel.x * c - vel.z * s;
+              const vz = vel.x * s + vel.z * c;
+              preview.vel.x = vx;
+              preview.vel.y = vel.y * lerp(0.98, 0.92, dist01);
+              preview.vel.z = vz;
+            } else {
+              preview.vel.x = vel.x;
+              preview.vel.y = vel.y;
+              preview.vel.z = vel.z;
+            }
+          } else {
+            const vel = swipeToVelocity(sx, sy, ex, ey, dtMs, pos);
+            preview.auto = false;
+            preview.willMake = false;
+            preview.vel.x = vel.x;
+            preview.vel.y = vel.y;
+            preview.vel.z = vel.z;
+          }
           preview.points = pointsForShot(pos);
           preview.age = 0;
           preview.prevY = preview.pos.y;
@@ -1763,6 +1908,7 @@
         state.aim.pointerId = null;
         state.aim.previewBall = null;
         state.aim.startWorld = null;
+        state.aim.moved = 0;
         try {
           canvasWrap.releasePointerCapture(e.pointerId);
         } catch { }
