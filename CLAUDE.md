@@ -4,11 +4,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-GameStorm is a collection of HTML5 mobile puzzle games built with vanilla JavaScript:
+GameStorm is a collection of HTML5 mobile mini games built with vanilla JavaScript:
 
 1. **Fashion Match** (时尚消消乐) - `FashionMatch/index.html` - Match-3 puzzle game
 2. **Merge2** (时尚逆袭：璀璨之星) - `Merge2/index.html` - Merge puzzle game
 3. **MagicBean** (魔豆登天) - `MagicBean/index.html` - Vertical platformer game
+4. **JumpUp** (跳跳芭蕉树) - `JumpUp/index.html` - Vertical jumping game
 
 All games use a **single-file architecture** with no build system. All HTML, CSS, and JavaScript are contained in their respective `index.html` files.
 
@@ -32,6 +33,8 @@ Server runs on http://localhost:8000 and serves:
 - Navigation page: http://localhost:8000/
 - Fashion Match: http://localhost:8000/FashionMatch/
 - Merge2: http://localhost:8000/Merge2/
+- MagicBean: http://localhost:8000/MagicBean/
+- JumpUp: http://localhost:8000/JumpUp/
 
 **Shell Scripts Features:**
 - Automatic dependency installation
@@ -43,17 +46,17 @@ Server runs on http://localhost:8000 and serves:
 
 ## Architecture
 
-### Two Different Approaches
+### Different Approaches
 
-| Aspect | Fashion Match | Merge2 | MagicBean |
-|--------|--------------|--------|-----------|
-| **File** | `FashionMatch/index.html` (434 lines) | `Merge2/index.html` (799 lines) | `MagicBean/index.html` |
-| **Pattern** | Class-based OOP | Imperative + Functional modules | Class-based OOP |
-| **Rendering** | HTML5 Canvas 2D API | DOM manipulation | HTML5 Canvas 2D API |
-| **Animation** | Manual (requestAnimationFrame) | GSAP 3.12.2 library | Mixed (Lerp + rAF) |
-| **Styling** | Inline CSS | Tailwind CSS (CDN) | Inline CSS |
-| **Graphics** | Emoji characters | Inline SVG library | HTML5 Canvas Shapes |
-| **Grid** | 7×9 (63 cells) | 6×7 (42 cells) | Infinite Vertical |
+| Aspect | Fashion Match | Merge2 | MagicBean | JumpUp |
+|--------|--------------|--------|-----------|--------|
+| **File** | `FashionMatch/index.html` (434 lines) | `Merge2/index.html` (799 lines) | `MagicBean/index.html` | `JumpUp/index.html` |
+| **Pattern** | Class-based OOP | Imperative + Functional modules | Class-based OOP | Imperative + Functional modules |
+| **Rendering** | HTML5 Canvas 2D API | DOM manipulation | HTML5 Canvas 2D API | HTML5 Canvas 2D API |
+| **Animation** | Manual (requestAnimationFrame) | GSAP 3.12.2 library | Mixed (Lerp + rAF) | Manual (requestAnimationFrame) |
+| **Styling** | Inline CSS | Tailwind CSS (CDN) | Inline CSS | Inline CSS |
+| **Graphics** | Emoji characters | Inline SVG library | HTML5 Canvas Shapes | HTML5 Canvas Shapes |
+| **Grid** | 7×9 (63 cells) | 6×7 (42 cells) | Infinite Vertical | Infinite Vertical |
 
 ### Fashion Match Architecture
 
@@ -313,4 +316,3 @@ Both games use browser DevTools:
 - GSAP handles animation performance
 - Minimize `renderGrid()` calls
 - Use CSS transforms for smooth drag feedback
-
