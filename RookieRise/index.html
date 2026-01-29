@@ -591,9 +591,16 @@
           moved: 0,
           startWorld: null,
           previewBall: null,
+          longPressTimer: null,
+          longPressed: false,
+          forceManual: false,
         },
         balls: [],
         effects: [],
+        firstPerson: {
+          active: false,
+          saved: null,
+        },
         lastTs: 0,
         lastTick: 0,
       };
@@ -974,6 +981,8 @@
       const INPUT = Object.freeze({
         TAP_MAX_MS: 170,
         TAP_MAX_PX: 12,
+        LONGPRESS_MS: 280,
+        LONGPRESS_MAX_PX: 10,
       });
 
       function swipeToVelocity(sx, sy, ex, ey, dtMs, fromPos, preview = false) {
@@ -1028,6 +1037,38 @@
         const vx = dirErr.x * vH;
         const vz = dirErr.z * vH;
         return vec3(vx, vy, vz);
+      }
+
+      function enterFirstPerson(fromPos) {
+        if (state.firstPerson.active) return;
+        state.firstPerson.saved = {
+          pos: vec3(camera.pos.x, camera.pos.y, camera.pos.z),
+          target: vec3(camera.target.x, camera.target.y, camera.target.z),
+        };
+        const target = vec3(WORLD.HOOP.x, WORLD.HOOP.y + 0.1, WORLD.HOOP.z);
+        const forward = vnorm(vsub(target, fromPos));
+        const back = 0.6;
+        const up = 0.35;
+        camera.pos = vec3(fromPos.x - forward.x * back, fromPos.y + up, fromPos.z - forward.z * back);
+        camera.target = target;
+        computeCameraBasis();
+        computeProjectionMap();
+        state.firstPerson.active = true;
+      }
+
+      function exitFirstPerson() {
+        if (!state.firstPerson.active || !state.firstPerson.saved) return;
+        camera.pos = vec3(state.firstPerson.saved.pos.x, state.firstPerson.saved.pos.y, state.firstPerson.saved.pos.z);
+        camera.target = vec3(state.firstPerson.saved.target.x, state.firstPerson.saved.target.y, state.firstPerson.saved.target.z);
+        state.firstPerson.saved = null;
+        computeCameraBasis();
+        computeProjectionMap();
+        state.firstPerson.active = false;
+      }
+
+      function getAimOrigin(fromPos) {
+        if (!state.firstPerson.active || !camera.basis) return fromPos;
+        return vadd(fromPos, vmul(camera.basis.forward, 0.35));
       }
 
       function autoAimVelocityAndChance(fromPos) {
@@ -1692,7 +1733,6 @@
 
       function drawAim() {
         if (!state.aim.active) return;
-        const rect = canvas.getBoundingClientRect();
         const sx = state.aim.sx;
         const sy = state.aim.sy;
         const cx = state.aim.cx;
@@ -1708,8 +1748,9 @@
         const dir = vnorm(vec3(vel.x, 0, vel.z));
         const len = clamp(Math.hypot(vel.x, vel.z) * 0.18, 1.2, 3.5);
 
-        const p0 = project(vec3(from.x, WORLD.BALL_R, from.z));
-        const p1 = project(vec3(from.x + dir.x * len, WORLD.BALL_R, from.z + dir.z * len));
+        const drawFrom = getAimOrigin(from);
+        const p0 = project(vec3(drawFrom.x, drawFrom.y, drawFrom.z));
+        const p1 = project(vec3(drawFrom.x + dir.x * len, drawFrom.y, drawFrom.z + dir.z * len));
         if (!p0 || !p1) return;
 
         const dx = p1.x - p0.x;
@@ -1769,6 +1810,7 @@
 
         const dtMs = now() - state.aim.st;
         const from = state.aim.startWorld || state.aim.previewBall.pos;
+        const drawFrom = getAimOrigin(from);
         const vel = swipeToVelocity(state.aim.sx, state.aim.sy, state.aim.cx, state.aim.cy, dtMs, from, true);
 
         // 简化弹道：不考虑碰撞，只做抛物线预估，足够用于“感觉”与瞄准
@@ -1777,9 +1819,9 @@
         const pts = [];
         for (let i = 0; i <= steps; i++) {
           const t = (i / steps) * tMax;
-          const x = from.x + vel.x * t;
-          const z = from.z + vel.z * t;
-          const y = from.y + vel.y * t + 0.5 * PHYS.G * t * t;
+          const x = drawFrom.x + vel.x * t;
+          const z = drawFrom.z + vel.z * t;
+          const y = drawFrom.y + vel.y * t + 0.5 * PHYS.G * t * t;
           if (y < WORLD.BALL_R) break;
           pts.push(vec3(x, y, z));
         }
@@ -1955,6 +1997,19 @@
         state.aim.st = now();
         state.aim.startWorld = startWorld;
         state.aim.moved = 0;
+        state.aim.longPressed = false;
+        state.aim.forceManual = false;
+        if (state.aim.longPressTimer) {
+          clearTimeout(state.aim.longPressTimer);
+          state.aim.longPressTimer = null;
+        }
+        state.aim.longPressTimer = setTimeout(() => {
+          if (!state.aim.active) return;
+          if (state.aim.moved > INPUT.LONGPRESS_MAX_PX) return;
+          state.aim.longPressed = true;
+          state.aim.forceManual = true;
+          enterFirstPerson(state.aim.startWorld || startWorld);
+        }, INPUT.LONGPRESS_MS);
 
         try {
           canvasWrap.setPointerCapture(e.pointerId);
@@ -1977,12 +2032,20 @@
         state.aim.cx = p.x;
         state.aim.cy = p.y;
         state.aim.moved = Math.max(state.aim.moved, Math.hypot(state.aim.cx - state.aim.sx, state.aim.cy - state.aim.sy));
+        if (state.aim.moved > INPUT.LONGPRESS_MAX_PX && state.aim.longPressTimer) {
+          clearTimeout(state.aim.longPressTimer);
+          state.aim.longPressTimer = null;
+        }
       }
 
       function onPointerUp(e) {
         if (!state.aim.active) return;
         if (e.pointerId !== state.aim.pointerId) return;
         const p = getLocalPoint(e);
+        if (state.aim.longPressTimer) {
+          clearTimeout(state.aim.longPressTimer);
+          state.aim.longPressTimer = null;
+        }
 
         const t1 = now();
         const dtMs = t1 - state.aim.st;
@@ -2000,7 +2063,7 @@
           preview.pos.z = pos.z;
 
           preview.held = false;
-          const isTap = dtMs <= INPUT.TAP_MAX_MS && state.aim.moved <= INPUT.TAP_MAX_PX;
+          const isTap = dtMs <= INPUT.TAP_MAX_MS && state.aim.moved <= INPUT.TAP_MAX_PX && !state.aim.forceManual;
           if (isTap) {
             const { vel, chance, dist01 } = autoAimVelocityAndChance(pos);
             preview.auto = true;
@@ -2041,6 +2104,11 @@
         state.aim.previewBall = null;
         state.aim.startWorld = null;
         state.aim.moved = 0;
+        state.aim.longPressed = false;
+        state.aim.forceManual = false;
+        if (state.firstPerson.active) {
+          exitFirstPerson();
+        }
         try {
           canvasWrap.releasePointerCapture(e.pointerId);
         } catch { }
