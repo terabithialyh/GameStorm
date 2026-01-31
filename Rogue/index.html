@@ -812,6 +812,14 @@
 
         // Math Utils
         const rand = (min, max) => Math.random() * (max - min) + min;
+        function hash2(x, y) {
+            let h = x * 374761393 + y * 668265263;
+            h = (h ^ (h >> 13)) * 1274126177;
+            return (h ^ (h >> 16)) >>> 0;
+        }
+        function randFromCoord(x, y, seed = 0) {
+            return hash2(x + seed * 31, y - seed * 17) / 4294967295;
+        }
         const dist = (x1, y1, x2, y2) => Math.hypot(x2 - x1, y2 - y1);
         const lerp = (a, b, t) => a + (b - a) * t;
 
@@ -2269,8 +2277,24 @@
 
         function draw() {
             // Clear with office background color
-            ctx.fillStyle = '#f0f4f8';
+            const bg = ctx.createLinearGradient(0, 0, 0, screenHeight);
+            bg.addColorStop(0, '#f7f9fb');
+            bg.addColorStop(1, '#e7ecf1');
+            ctx.fillStyle = bg;
             ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Subtle wall pattern
+            ctx.save();
+            ctx.globalAlpha = 0.06;
+            ctx.strokeStyle = '#a4b0be';
+            ctx.lineWidth = 1;
+            for (let x = -screenHeight; x < screenWidth + screenHeight; x += 60) {
+                ctx.beginPath();
+                ctx.moveTo(x, 0);
+                ctx.lineTo(x + screenHeight, screenHeight);
+                ctx.stroke();
+            }
+            ctx.restore();
 
             // Grid lines (Office floor tiles) - infinite loop
             const tileSize = 100;
@@ -2296,6 +2320,185 @@
             }
 
             ctx.translate(-camera.x + shakeX, -camera.y + shakeY);
+
+            // Office decor (procedural, non-colliding)
+            const decoSize = 650;
+            const startX = Math.floor((camera.x - screenWidth) / decoSize);
+            const endX = Math.floor((camera.x + screenWidth) / decoSize);
+            const startY = Math.floor((camera.y - screenHeight) / decoSize);
+            const endY = Math.floor((camera.y + screenHeight) / decoSize);
+            for (let gx = startX; gx <= endX; gx++) {
+                for (let gy = startY; gy <= endY; gy++) {
+                    const baseX = gx * decoSize + decoSize / 2;
+                    const baseY = gy * decoSize + decoSize / 2;
+                    const r1 = randFromCoord(gx, gy, 1);
+                    const r2 = randFromCoord(gx, gy, 2);
+                    const r3 = randFromCoord(gx, gy, 3);
+                    const r4 = randFromCoord(gx, gy, 4);
+                    const r5 = randFromCoord(gx, gy, 5);
+                    const r6 = randFromCoord(gx, gy, 6);
+                    const r7 = randFromCoord(gx, gy, 7);
+
+                    // Desks + monitors
+                    if (r1 > 0.2) {
+                        const dx = baseX + (r2 - 0.5) * 200;
+                        const dy = baseY + (r3 - 0.5) * 200;
+                        ctx.save();
+                        ctx.translate(dx, dy);
+                        ctx.rotate((r1 - 0.5) * 0.15);
+                        ctx.fillStyle = '#f5f6fa';
+                        ctx.strokeStyle = '#2f3640';
+                        ctx.lineWidth = 2;
+                        ctx.fillRect(-80, -32, 160, 64);
+                        ctx.strokeRect(-80, -32, 160, 64);
+                        ctx.fillStyle = '#dfe6e9';
+                        ctx.fillRect(-50, -20, 60, 32);
+                        ctx.fillStyle = '#2d3436';
+                        ctx.fillRect(20, -18, 40, 26);
+                        ctx.fillStyle = '#636e72';
+                        ctx.fillRect(24, -14, 32, 18);
+                        // Desk number
+                        const deskId = Math.floor(randFromCoord(gx, gy, 11) * 90 + 10);
+                        ctx.fillStyle = '#111';
+                        ctx.fillRect(-78, -30, 28, 12);
+                        ctx.fillStyle = '#fff';
+                        ctx.font = 'bold 10px sans-serif';
+                        ctx.textAlign = 'left';
+                        ctx.textBaseline = 'middle';
+                        ctx.fillText(`#${deskId}`, -75, -24);
+                        ctx.restore();
+                    }
+
+                    // Sofa / lounge
+                    if (r2 > 0.6) {
+                        const sx = baseX + (randFromCoord(gx, gy, 4) - 0.5) * 240;
+                        const sy = baseY + (randFromCoord(gx, gy, 5) - 0.5) * 240;
+                        ctx.save();
+                        ctx.translate(sx, sy);
+                        ctx.fillStyle = '#74b9ff';
+                        ctx.strokeStyle = '#2f3640';
+                        ctx.lineWidth = 2;
+                        ctx.fillRect(-60, -18, 120, 36);
+                        ctx.strokeRect(-60, -18, 120, 36);
+                        ctx.fillStyle = '#a4c8ff';
+                        ctx.fillRect(-52, -12, 104, 12);
+                        ctx.restore();
+                    }
+
+                    // Plants
+                    if (r3 > 0.5) {
+                        const px = baseX + (randFromCoord(gx, gy, 6) - 0.5) * 260;
+                        const py = baseY + (randFromCoord(gx, gy, 7) - 0.5) * 260;
+                        ctx.save();
+                        ctx.translate(px, py);
+                        ctx.fillStyle = '#2ecc71';
+                        ctx.beginPath();
+                        ctx.arc(0, -10, 18, 0, Math.PI * 2);
+                        ctx.fill();
+                        ctx.fillStyle = '#27ae60';
+                        ctx.beginPath();
+                        ctx.arc(-8, -14, 12, 0, Math.PI * 2);
+                        ctx.arc(10, -12, 12, 0, Math.PI * 2);
+                        ctx.fill();
+                        ctx.fillStyle = '#8d6e63';
+                        ctx.fillRect(-14, 8, 28, 14);
+                        ctx.strokeStyle = '#2f3640';
+                        ctx.lineWidth = 2;
+                        ctx.strokeRect(-14, 8, 28, 14);
+                        ctx.restore();
+                    }
+
+                    // OKR whiteboard
+                    if (r4 > 0.72) {
+                        const wx = baseX + (r5 - 0.5) * 260;
+                        const wy = baseY + (r6 - 0.5) * 260;
+                        ctx.save();
+                        ctx.translate(wx, wy);
+                        ctx.fillStyle = '#ffffff';
+                        ctx.strokeStyle = '#2f3640';
+                        ctx.lineWidth = 2;
+                        ctx.fillRect(-70, -40, 140, 80);
+                        ctx.strokeRect(-70, -40, 140, 80);
+                        ctx.fillStyle = '#ff7675';
+                        ctx.fillRect(-70, -40, 140, 14);
+                        ctx.fillStyle = '#ffffff';
+                        ctx.font = 'bold 10px sans-serif';
+                        ctx.textAlign = 'center';
+                        ctx.textBaseline = 'middle';
+                        ctx.fillText('OKR', 0, -33);
+                        ctx.fillStyle = '#2d3436';
+                        ctx.fillRect(-55, -10, 110, 6);
+                        ctx.fillRect(-55, 2, 90, 6);
+                        ctx.fillRect(-55, 14, 70, 6);
+                        ctx.restore();
+                    }
+
+                    // Blackboard wall
+                    if (r5 > 0.75) {
+                        const bx = baseX + (r6 - 0.5) * 260;
+                        const by = baseY + (r7 - 0.5) * 260;
+                        ctx.save();
+                        ctx.translate(bx, by);
+                        ctx.fillStyle = '#1b4332';
+                        ctx.strokeStyle = '#0b2a1c';
+                        ctx.lineWidth = 3;
+                        ctx.fillRect(-80, -45, 160, 90);
+                        ctx.strokeRect(-80, -45, 160, 90);
+                        ctx.strokeStyle = 'rgba(255,255,255,0.6)';
+                        ctx.lineWidth = 2;
+                        ctx.beginPath();
+                        ctx.moveTo(-60, -20);
+                        ctx.lineTo(50, -20);
+                        ctx.moveTo(-60, 0);
+                        ctx.lineTo(30, 0);
+                        ctx.moveTo(-60, 20);
+                        ctx.lineTo(10, 20);
+                        ctx.stroke();
+                        ctx.restore();
+                    }
+
+                    // Coffee bar
+                    if (r6 > 0.78) {
+                        const cx = baseX + (r7 - 0.5) * 260;
+                        const cy = baseY + (r1 - 0.5) * 260;
+                        ctx.save();
+                        ctx.translate(cx, cy);
+                        ctx.fillStyle = '#dcdde1';
+                        ctx.strokeStyle = '#2f3640';
+                        ctx.lineWidth = 2;
+                        ctx.fillRect(-90, -18, 180, 36);
+                        ctx.strokeRect(-90, -18, 180, 36);
+                        ctx.fillStyle = '#353b48';
+                        ctx.fillRect(-70, -30, 50, 24);
+                        ctx.fillStyle = '#718093';
+                        ctx.fillRect(-60, -26, 30, 14);
+                        ctx.fillStyle = '#fbc531';
+                        ctx.beginPath();
+                        ctx.arc(40, -6, 8, 0, Math.PI * 2);
+                        ctx.fill();
+                        ctx.fillStyle = '#e1b12c';
+                        ctx.fillRect(32, 2, 16, 6);
+                        ctx.restore();
+                    }
+
+                    // Glass panels / posters
+                    if (r1 < 0.35) {
+                        const wx = baseX + (randFromCoord(gx, gy, 8) - 0.5) * 260;
+                        const wy = baseY + (randFromCoord(gx, gy, 9) - 0.5) * 260;
+                        ctx.save();
+                        ctx.translate(wx, wy);
+                        ctx.fillStyle = 'rgba(116, 185, 255, 0.18)';
+                        ctx.strokeStyle = '#2f3640';
+                        ctx.lineWidth = 2;
+                        ctx.fillRect(-60, -40, 120, 80);
+                        ctx.strokeRect(-60, -40, 120, 80);
+                        ctx.fillStyle = '#ffffff';
+                        ctx.fillRect(-40, -10, 80, 10);
+                        ctx.fillRect(-40, 6, 60, 6);
+                        ctx.restore();
+                    }
+                }
+            }
 
             // Draw Shadows
             ctx.fillStyle = 'rgba(0,0,0,0.1)';
