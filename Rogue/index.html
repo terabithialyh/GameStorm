@@ -33,7 +33,7 @@
             display: flex;
             flex-direction: column;
             justify-content: space-between;
-            padding: 20px;
+            padding: 36px 20px 20px;
             box-sizing: border-box;
         }
 
@@ -43,6 +43,77 @@
             color: #333;
             text-shadow: 2px 2px 0px #fff;
             pointer-events: none;
+        }
+
+        #level-bar-wrap {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 28px;
+            pointer-events: none;
+            z-index: 5;
+        }
+
+        #level-bar {
+            position: relative;
+            margin: 24px 16px 0;
+            height: 14px;
+            background: #2c2c2c;
+            border: 2px solid #1b1b1b;
+            border-radius: 6px;
+            box-shadow: 2px 2px 0px #000;
+            overflow: visible;
+        }
+
+        #level-bar-fill {
+            position: absolute;
+            left: 0;
+            top: 0;
+            height: 100%;
+            width: 0%;
+            background: linear-gradient(90deg, #f6d365, #fda085);
+            z-index: 1;
+        }
+
+        #level-exp-text {
+            position: absolute;
+            right: 6px;
+            top: 50%;
+            width: 100%;
+            height: 100%;
+            line-height: 14px;
+            text-align: right;
+            font-size: 10px;
+            font-weight: bold;
+            color: #fff;
+            text-shadow: 1px 1px 0px #000;
+            transform: translateY(-50%);
+            z-index: 2;
+        }
+
+        #level-badge {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: #111;
+            color: #fff;
+            font-size: 12px;
+            font-weight: bold;
+            padding: 2px 10px;
+            border: 2px solid #fff;
+            border-radius: 12px;
+            box-shadow: 2px 2px 0px #000;
+            z-index: 10;
+        }
+
+        #level-display {
+            display: none;
+        }
+
+        #hp-display {
+            display: none;
         }
 
         #start-overlay,
@@ -160,6 +231,21 @@
                 font-size: 20px;
             }
 
+            #level-bar {
+                margin: 18px 10px 0;
+                height: 12px;
+            }
+
+            #level-exp-text {
+                line-height: 12px;
+                font-size: 9px;
+            }
+
+            #level-badge {
+                font-size: 10px;
+                padding: 1px 8px;
+            }
+
             #mobile-controls {
                 display: block;
             }
@@ -171,10 +257,18 @@
 
     <canvas id="gameCanvas"></canvas>
 
+    <div id="level-bar-wrap">
+        <div id="level-bar">
+            <div id="level-bar-fill"></div>
+            <div id="level-exp-text">0/0</div>
+            <div id="level-badge">LV. 1</div>
+        </div>
+    </div>
+
     <div id="ui-layer">
         <div id="score-display" class="hud-text">KPI: 0</div>
         <div id="level-display" class="hud-text">等级: 1</div>
-        <div id="hp-display" class="hud-text">精力值: 100%</div>
+        <div id="hp-display" class="hud-text">活力值: 100%</div>
     </div>
 
     <div id="start-overlay">
@@ -539,15 +633,28 @@
         // Projectiles
         const projectiles = [];
         class Projectile {
-            constructor(x, y, tx, ty, type) {
+            constructor(x, y, tx, ty, type, options = {}) {
                 this.x = x;
                 this.y = y;
                 this.type = type;
+                this.owner = options.owner || 'player';
                 const angle = Math.atan2(ty - y, tx - x);
-                this.vx = Math.cos(angle) * 10;
-                this.vy = Math.sin(angle) * 10;
+                const baseSpeed = options.speed !== undefined ? options.speed : 10 * player.projectileSpeed;
+                this.vx = Math.cos(angle) * baseSpeed;
+                this.vy = Math.sin(angle) * baseSpeed;
                 this.life = 100;
-                this.radius = 10;
+                const sizeScale = options.size !== undefined ? options.size : player.projectileSize;
+                this.radius = 10 * sizeScale;
+                this.damage = options.damage !== undefined ? options.damage : (this.owner === 'player' ? player.damageMultiplier : 1);
+                if (options.pierce !== undefined) {
+                    this.pierce = options.pierce;
+                } else if (this.type === 'paper') {
+                    this.pierce = 999;
+                } else if (this.owner === 'player') {
+                    this.pierce = player.keyboardPierce;
+                } else {
+                    this.pierce = 0;
+                }
 
                 // Visual
                 this.char = 'A';
@@ -567,9 +674,10 @@
 
                 if (this.type === 'keyboard') {
                     ctx.fillStyle = '#333';
-                    ctx.fillRect(-10, -10, 20, 20);
+                    const size = 20 * (this.radius / 10);
+                    ctx.fillRect(-size / 2, -size / 2, size, size);
                     ctx.fillStyle = '#fff';
-                    ctx.font = 'bold 14px sans-serif';
+                    ctx.font = `bold ${Math.max(10, size * 0.7)}px sans-serif`;
                     ctx.textAlign = 'center';
                     ctx.textBaseline = 'middle';
                     ctx.fillText(this.char, 0, 1);
@@ -578,12 +686,14 @@
                     ctx.strokeStyle = '#000';
                     ctx.lineWidth = 2;
                     ctx.rotate(this.life * 0.2);
-                    ctx.fillRect(-8, -12, 16, 24);
-                    ctx.strokeRect(-8, -12, 16, 24);
+                    const w = 16 * (this.radius / 10);
+                    const h = 24 * (this.radius / 10);
+                    ctx.fillRect(-w / 2, -h / 2, w, h);
+                    ctx.strokeRect(-w / 2, -h / 2, w, h);
                 } else if (this.type === 'enemy_hr') {
                     ctx.fillStyle = '#ff4757';
                     ctx.beginPath();
-                    ctx.arc(0, 0, 8, 0, Math.PI * 2);
+                    ctx.arc(0, 0, 8 * (this.radius / 10), 0, Math.PI * 2);
                     ctx.fill();
                 }
 
@@ -626,8 +736,8 @@
                 this.x = x;
                 this.y = y;
                 this.level = level;
-                this.radius = 70 + level * 15;
-                this.life = 240 + level * 60;
+                this.radius = 70 + level * 15 + player.coffeeRadiusBonus;
+                this.life = 240 + level * 60 + player.coffeeDurationBonus;
                 this.tick = 0;
                 this.slow = Math.max(0.35, 0.75 - level * 0.1);
             }
@@ -673,6 +783,21 @@
             kpi: 0, // Score
             magnetRange: 100,
             regen: 0,
+            expGain: 1,
+            damageMultiplier: 1,
+            projectileSpeed: 1,
+            projectileSize: 1,
+            critChance: 0,
+            critMultiplier: 2,
+            keyboardPierce: 0,
+            chairCount: 0,
+            chairRadius: 70,
+            chairSpeed: 0.05,
+            chairDamage: 1,
+            chairAngle: 0,
+            killHeal: 0,
+            coffeeRadiusBonus: 0,
+            coffeeDurationBonus: 0,
             weapons: {
                 keyboard: { level: 1, timer: 0, cooldown: 15 },
                 printer: { level: 0, timer: 0, cooldown: 80 },
@@ -693,6 +818,21 @@
                 this.pendingLevelUps = 0;
                 this.magnetRange = 100;
                 this.regen = 0;
+                this.expGain = 1;
+                this.damageMultiplier = 1;
+                this.projectileSpeed = 1;
+                this.projectileSize = 1;
+                this.critChance = 0;
+                this.critMultiplier = 2;
+                this.keyboardPierce = 0;
+                this.chairCount = 0;
+                this.chairRadius = 70;
+                this.chairSpeed = 0.05;
+                this.chairDamage = 1;
+                this.chairAngle = 0;
+                this.killHeal = 0;
+                this.coffeeRadiusBonus = 0;
+                this.coffeeDurationBonus = 0;
                 // Reset weapons
                 this.weapons.keyboard.level = 1;
                 this.weapons.printer.level = 0;
@@ -739,6 +879,9 @@
                 this.body.update();
 
                 updateCamera();
+                if (this.chairCount > 0) {
+                    this.chairAngle += this.chairSpeed;
+                }
 
                 // Auto Attack
                 this.handleWeapons();
@@ -820,6 +963,22 @@
 
             draw(ctx) {
                 this.body.draw(ctx);
+                // Vitality bar (above head)
+                const barWidth = 60;
+                const barHeight = 8;
+                const barOffset = this.body.radius + 18;
+                const barX = this.x - barWidth / 2;
+                const barY = this.y - barOffset;
+                const ratio = Math.max(0, Math.min(1, this.hp / this.maxHp));
+                ctx.save();
+                ctx.fillStyle = '#c0392b';
+                ctx.fillRect(barX, barY, barWidth, barHeight);
+                ctx.fillStyle = '#2ecc71';
+                ctx.fillRect(barX, barY, barWidth * ratio, barHeight);
+                ctx.strokeStyle = '#1f1f1f';
+                ctx.lineWidth = 2;
+                ctx.strokeRect(barX, barY, barWidth, barHeight);
+                ctx.restore();
                 // Face (Glasses & Tie)
                 ctx.fillStyle = '#000';
                 // Glasses
@@ -840,8 +999,67 @@
             }
         };
 
+        function getChairPositions() {
+            const positions = [];
+            if (player.chairCount <= 0) return positions;
+            const step = (Math.PI * 2) / player.chairCount;
+            for (let i = 0; i < player.chairCount; i++) {
+                const angle = player.chairAngle + step * i;
+                positions.push({
+                    x: player.x + Math.cos(angle) * player.chairRadius,
+                    y: player.y + Math.sin(angle) * player.chairRadius
+                });
+            }
+            return positions;
+        }
+
+        function drawChairs(ctx) {
+            const chairs = getChairPositions();
+            if (chairs.length === 0) return;
+            for (const c of chairs) {
+                ctx.save();
+                ctx.translate(c.x, c.y);
+                ctx.rotate(player.chairAngle * 2);
+                ctx.fillStyle = '#8d6e63';
+                ctx.strokeStyle = '#2f2f2f';
+                ctx.lineWidth = 2;
+                ctx.fillRect(-10, -6, 20, 12);
+                ctx.strokeRect(-10, -6, 20, 12);
+                ctx.fillRect(-6, 6, 12, 10);
+                ctx.strokeRect(-6, 6, 12, 10);
+                ctx.restore();
+            }
+        }
+
         // Enemies
         const enemies = [];
+        function countEnemiesByType(type) {
+            let count = 0;
+            for (const enemy of enemies) {
+                if (enemy.type === type) count++;
+            }
+            return count;
+        }
+        const eliteNamePool = [
+            '摸鱼王中王·精英',
+            '领导画饼师·精英',
+            '临时会议怪·精英',
+            'KPI拉满侠·精英',
+            '不躺不卷·精英',
+            '周报卷王·精英',
+            '996驱动员·精英'
+        ];
+        const bossNamePool = [
+            'PPT主宰者·BOSS',
+            'Excel吞噬者·BOSS',
+            '终极画饼王·BOSS',
+            '内卷大魔王·BOSS',
+            '摸鱼终结者·BOSS',
+            '需求变更王·BOSS'
+        ];
+        function pickName(pool) {
+            return pool[Math.floor(Math.random() * pool.length)];
+        }
         class Enemy {
             constructor(type) {
                 const spawnDistance = Math.max(screenWidth, screenHeight) * 0.8 + 120;
@@ -851,6 +1069,8 @@
 
                 this.type = type;
                 this.markedForDeletion = false;
+                this.chairHitCooldown = 0;
+                this.name = '';
 
                 if (type === 'colleague') {
                     this.speed = rand(1, 2);
@@ -858,12 +1078,14 @@
                     this.radius = 20;
                     this.color = '#bdc3c7'; // Grey
                     this.score = 10;
+                    this.name = '';
                 } else if (type === 'manager') {
                     this.speed = 2.5;
                     this.hp = 8;
                     this.radius = 25;
                     this.color = '#e056fd'; // Purple
                     this.score = 30;
+                    this.name = pickName(eliteNamePool);
                 } else if (type === 'boss') {
                     // Boss Logic override
                     this.x = player.x;
@@ -875,6 +1097,7 @@
                     this.score = 1000;
                     this.state = 'enter';
                     this.timer = 0;
+                    this.name = pickName(bossNamePool);
                 }
 
                 this.body = new JellyBody(this.x, this.y, this.radius, this.color, type === 'boss' ? 16 : 8);
@@ -920,6 +1143,10 @@
                     const vLen = Math.hypot(this.vx, this.vy) || 1;
                     this.body.deform(this.vx / vLen, this.vy / vLen, 0.5);
                 }
+
+                if (this.chairHitCooldown > 0) {
+                    this.chairHitCooldown--;
+                }
             }
 
             updateBoss() {
@@ -955,6 +1182,7 @@
                                 vx: 0,
                                 vy: 5,
                                 type: 'excel',
+                                owner: 'enemy',
                                 life: 100, radius: 20,
                                 draw: function (ctx) {
                                     ctx.fillStyle = '#27ae60';
@@ -969,7 +1197,12 @@
                 } else if (this.state === 'laser') {
                     if (this.timer % 20 === 0) {
                         const angle = Math.atan2(player.y - this.y, player.x - this.x);
-                        projectiles.push(new Projectile(this.x, this.y, player.x, player.y, 'enemy_hr'));
+                        projectiles.push(new Projectile(this.x, this.y, player.x, player.y, 'enemy_hr', {
+                            owner: 'enemy',
+                            speed: 6,
+                            damage: 1,
+                            size: 1
+                        }));
                     }
                     if (this.timer % 180 === 60) this.state = 'idle';
                 }
@@ -977,6 +1210,21 @@
 
             draw(ctx) {
                 this.body.draw(ctx);
+
+                // Name tag for elite/boss
+                if (this.name) {
+                    const nameOffset = this.type === 'boss' ? this.radius + 38 : this.radius + 18;
+                    ctx.save();
+                    ctx.font = 'bold 16px sans-serif';
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    ctx.strokeStyle = '#000';
+                    ctx.lineWidth = 4;
+                    ctx.strokeText(this.name, this.x, this.y - nameOffset);
+                    ctx.fillStyle = '#ffeaa7';
+                    ctx.fillText(this.name, this.x, this.y - nameOffset);
+                    ctx.restore();
+                }
 
                 // Eyes
                 ctx.fillStyle = '#fff';
@@ -1003,10 +1251,12 @@
 
                 // HP Bar for Boss
                 if (this.type === 'boss') {
+                    const barOffset = this.radius + 20;
+                    const barY = this.y - barOffset;
                     ctx.fillStyle = 'red';
-                    ctx.fillRect(this.x - 50, this.y - 80, 100, 10);
+                    ctx.fillRect(this.x - 50, barY, 100, 10);
                     ctx.fillStyle = 'lime';
-                    ctx.fillRect(this.x - 50, this.y - 80, 100 * (this.hp / 500), 10);
+                    ctx.fillRect(this.x - 50, barY, 100 * (this.hp / 500), 10);
                 }
             }
         }
@@ -1089,7 +1339,7 @@
             {
                 id: 'max_hp',
                 name: '抗压训练',
-                desc: '最大精力 +15',
+                desc: '最大活力 +15',
                 canApply: () => (upgradeLevels.max_hp || 0) < 5,
                 apply: () => {
                     upgradeLevels.max_hp = (upgradeLevels.max_hp || 0) + 1;
@@ -1110,11 +1360,141 @@
             {
                 id: 'regen',
                 name: '摸鱼恢复',
-                desc: '每秒恢复精力 +0.5',
+                desc: '每秒恢复活力 +0.5',
                 canApply: () => (upgradeLevels.regen || 0) < 6,
                 apply: () => {
                     upgradeLevels.regen = (upgradeLevels.regen || 0) + 1;
                     player.regen += 0.5;
+                }
+            },
+            {
+                id: 'damage_up',
+                name: '暴走输出',
+                desc: '整体伤害 +12%',
+                canApply: () => (upgradeLevels.damage_up || 0) < 8,
+                apply: () => {
+                    upgradeLevels.damage_up = (upgradeLevels.damage_up || 0) + 1;
+                    player.damageMultiplier = +(player.damageMultiplier * 1.12).toFixed(3);
+                }
+            },
+            {
+                id: 'projectile_speed',
+                name: '火速投递',
+                desc: '子弹速度 +15%',
+                canApply: () => (upgradeLevels.projectile_speed || 0) < 6,
+                apply: () => {
+                    upgradeLevels.projectile_speed = (upgradeLevels.projectile_speed || 0) + 1;
+                    player.projectileSpeed = +(player.projectileSpeed * 1.15).toFixed(3);
+                }
+            },
+            {
+                id: 'projectile_size',
+                name: '加大键帽',
+                desc: '子弹体积 +15%',
+                canApply: () => (upgradeLevels.projectile_size || 0) < 6,
+                apply: () => {
+                    upgradeLevels.projectile_size = (upgradeLevels.projectile_size || 0) + 1;
+                    player.projectileSize = Math.min(2.2, +(player.projectileSize + 0.15).toFixed(2));
+                }
+            },
+            {
+                id: 'crit_chance',
+                name: '致命绩效',
+                desc: '暴击率 +5%',
+                canApply: () => (upgradeLevels.crit_chance || 0) < 6,
+                apply: () => {
+                    upgradeLevels.crit_chance = (upgradeLevels.crit_chance || 0) + 1;
+                    player.critChance = Math.min(0.35, +(player.critChance + 0.05).toFixed(3));
+                }
+            },
+            {
+                id: 'exp_gain',
+                name: 'KPI加班',
+                desc: '经验获取 +10%',
+                canApply: () => (upgradeLevels.exp_gain || 0) < 8,
+                apply: () => {
+                    upgradeLevels.exp_gain = (upgradeLevels.exp_gain || 0) + 1;
+                    player.expGain = +(player.expGain * 1.1).toFixed(3);
+                }
+            },
+            {
+                id: 'keyboard_pierce',
+                name: '键帽穿透',
+                desc: '键盘子弹穿透 +1',
+                canApply: () => (upgradeLevels.keyboard_pierce || 0) < 3,
+                apply: () => {
+                    upgradeLevels.keyboard_pierce = (upgradeLevels.keyboard_pierce || 0) + 1;
+                    player.keyboardPierce += 1;
+                }
+            },
+            {
+                id: 'chair_unlock',
+                name: '旋转办公椅',
+                desc: '解锁/增加旋转椅 +1',
+                canApply: () => (upgradeLevels.chair_unlock || 0) < 4,
+                apply: () => {
+                    upgradeLevels.chair_unlock = (upgradeLevels.chair_unlock || 0) + 1;
+                    player.chairCount += 1;
+                }
+            },
+            {
+                id: 'chair_speed',
+                name: '椅子加速',
+                desc: '旋转速度 +15%',
+                canApply: () => (upgradeLevels.chair_speed || 0) < 5 && player.chairCount > 0,
+                apply: () => {
+                    upgradeLevels.chair_speed = (upgradeLevels.chair_speed || 0) + 1;
+                    player.chairSpeed = +(player.chairSpeed * 1.15).toFixed(3);
+                }
+            },
+            {
+                id: 'chair_radius',
+                name: '椅子外扩',
+                desc: '旋转半径 +10',
+                canApply: () => (upgradeLevels.chair_radius || 0) < 5 && player.chairCount > 0,
+                apply: () => {
+                    upgradeLevels.chair_radius = (upgradeLevels.chair_radius || 0) + 1;
+                    player.chairRadius += 10;
+                }
+            },
+            {
+                id: 'chair_damage',
+                name: '椅子重击',
+                desc: '旋转椅伤害 +1',
+                canApply: () => (upgradeLevels.chair_damage || 0) < 4 && player.chairCount > 0,
+                apply: () => {
+                    upgradeLevels.chair_damage = (upgradeLevels.chair_damage || 0) + 1;
+                    player.chairDamage += 1;
+                }
+            },
+            {
+                id: 'kill_heal',
+                name: '绩效回血',
+                desc: '击败敌人回复活力 +2',
+                canApply: () => (upgradeLevels.kill_heal || 0) < 5,
+                apply: () => {
+                    upgradeLevels.kill_heal = (upgradeLevels.kill_heal || 0) + 1;
+                    player.killHeal += 2;
+                }
+            },
+            {
+                id: 'coffee_spread',
+                name: '咖啡扩散',
+                desc: '咖啡范围 +20',
+                canApply: () => (upgradeLevels.coffee_spread || 0) < 4 && player.weapons.coffee.level > 0,
+                apply: () => {
+                    upgradeLevels.coffee_spread = (upgradeLevels.coffee_spread || 0) + 1;
+                    player.coffeeRadiusBonus += 20;
+                }
+            },
+            {
+                id: 'coffee_linger',
+                name: '回味持久',
+                desc: '咖啡持续时间 +60',
+                canApply: () => (upgradeLevels.coffee_linger || 0) < 4 && player.weapons.coffee.level > 0,
+                apply: () => {
+                    upgradeLevels.coffee_linger = (upgradeLevels.coffee_linger || 0) + 1;
+                    player.coffeeDurationBonus += 60;
                 }
             }
         ];
@@ -1131,7 +1511,7 @@
         }
 
         function addExperience(amount) {
-            player.exp += amount;
+            player.exp += amount * player.expGain;
             while (player.exp >= player.expToNext) {
                 player.exp -= player.expToNext;
                 player.expToNext = Math.floor(player.expToNext * 1.25 + 20);
@@ -1183,6 +1563,9 @@
             drops.push(new Drop(e.x, e.y));
             player.kpi += e.score;
             addExperience(e.score);
+            if (player.killHeal > 0) {
+                player.hp = Math.min(player.maxHp, player.hp + player.killHeal);
+            }
             spawnParticles(e.x, e.y, '#fff', 15);
         }
 
@@ -1202,19 +1585,45 @@
             }
         }
 
+        function handleChairHits() {
+            if (player.chairCount <= 0) return;
+            const chairs = getChairPositions();
+            if (chairs.length === 0) return;
+            const hitRadius = 14;
+            for (const e of enemies) {
+                if (e.markedForDeletion || e.chairHitCooldown > 0) continue;
+                for (const c of chairs) {
+                    if (dist(c.x, c.y, e.x, e.y) < e.radius + hitRadius) {
+                        const angle = Math.atan2(e.y - c.y, e.x - c.x);
+                        damageEnemy(e, player.chairDamage, angle);
+                        e.chairHitCooldown = 10;
+                        break;
+                    }
+                }
+            }
+        }
+
         function checkCollisions() {
             // Projectiles vs Enemies
             for (let i = projectiles.length - 1; i >= 0; i--) {
                 const p = projectiles[i];
+                if (p.owner && p.owner !== 'player') continue;
 
                 // Enemy Hit
                 for (let j = enemies.length - 1; j >= 0; j--) {
                     const e = enemies[j];
                     if (dist(p.x, p.y, e.x, e.y) < e.radius + p.radius) {
                         // Hit!
-                        damageEnemy(e, 1, Math.atan2(p.vy, p.vx));
+                        let damage = p.damage || 1;
+                        if (player.critChance > 0 && Math.random() < player.critChance) {
+                            damage *= player.critMultiplier;
+                            spawnParticles(e.x, e.y, '#f6e58d', 6);
+                        }
+                        damageEnemy(e, damage, Math.atan2(p.vy, p.vx));
 
-                        if (p.type !== 'paper') { // Paper penetrates
+                        if (p.pierce > 0) {
+                            p.pierce--;
+                        } else {
                             projectiles.splice(i, 1);
                         }
                         break;
@@ -1259,7 +1668,7 @@
             // For boss projectiles mostly
             for (let i = projectiles.length - 1; i >= 0; i--) {
                 const p = projectiles[i];
-                if (p.type === 'enemy_hr' || p.type === 'excel') {
+                if (p.owner === 'enemy') {
                     if (dist(p.x, p.y, player.x, player.y) < p.radius + player.body.radius) {
                         hitPlayer = true;
                         projectiles.splice(i, 1);
@@ -1280,16 +1689,28 @@
         function spawnWave() {
             gameData.waveTimer++;
 
-            const spawnRate = Math.max(20, 100 - Math.floor(gameData.waveTimer / 60)); // Increases over time
+            if (gameData.waveTimer === 1) {
+                for (let i = 0; i < 3; i++) enemies.push(new Enemy('colleague'));
+                if (Math.random() > 0.3 && countEnemiesByType('manager') < 8) {
+                    enemies.push(new Enemy('manager'));
+                }
+            }
+
+            const spawnRate = Math.max(12, 70 - Math.floor(gameData.waveTimer / 45)); // Increases over time
 
             if (gameData.waveTimer % spawnRate === 0) {
-                const type = Math.random() > 0.8 ? 'manager' : 'colleague';
+                let type = Math.random() > 0.8 ? 'manager' : 'colleague';
+                if (type === 'manager' && countEnemiesByType('manager') >= 8) {
+                    type = 'colleague';
+                }
                 enemies.push(new Enemy(type));
             }
 
             // Boss Spawn
             if (gameData.waveTimer === 1800) { // 30 seconds approx
-                enemies.push(new Enemy('boss'));
+                if (countEnemiesByType('boss') < 1) {
+                    enemies.push(new Enemy('boss'));
+                }
                 // Clear small enemies
                 // enemies.forEach(e => { if (e.type !== 'boss') e.hp = 0; });
             }
@@ -1338,12 +1759,17 @@
                 }
             }
 
+            handleChairHits();
             checkCollisions();
 
             // HUD
             document.getElementById('score-display').innerText = `KPI: ${player.kpi}`;
             document.getElementById('level-display').innerText = `等级: ${player.level} (${Math.floor(player.exp)}/${player.expToNext})`;
-            document.getElementById('hp-display').innerText = `精力值: ${Math.floor(player.hp)}/${player.maxHp}`;
+            document.getElementById('hp-display').innerText = `活力值: ${Math.floor(player.hp)}/${player.maxHp}`;
+            const expRatio = Math.max(0, Math.min(1, player.exp / player.expToNext));
+            levelBarFill.style.width = `${Math.floor(expRatio * 100)}%`;
+            levelBadge.innerText = `LV. ${player.level}`;
+            levelExpText.innerText = `${Math.floor(player.exp)}/${player.expToNext}`;
         }
 
         function draw() {
@@ -1388,6 +1814,7 @@
             projectiles.forEach(p => p.draw(ctx));
             coffeeZones.forEach(z => z.draw(ctx));
             enemies.forEach(e => e.draw(ctx));
+            drawChairs(ctx);
             if (player.body) player.draw(ctx);
             particles.forEach(p => p.draw(ctx));
 
@@ -1407,6 +1834,9 @@
         const upgradeOptions = document.getElementById('upgrade-options');
         const startBtn = document.getElementById('start-btn');
         const restartBtn = document.getElementById('restart-btn');
+        const levelBarFill = document.getElementById('level-bar-fill');
+        const levelBadge = document.getElementById('level-badge');
+        const levelExpText = document.getElementById('level-exp-text');
 
         function startGame() {
             AudioSys.init();
