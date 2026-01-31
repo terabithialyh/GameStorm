@@ -1473,6 +1473,8 @@
                     this.score = 2000;
                     this.state = 'enter';
                     this.timer = 0;
+                    this.laserCd = 0;
+                    this.excelCd = 0;
                     this.contactDamage = Math.max(4, Math.round(5 * this.power));
                     this.projectileDamage = Math.max(2, Math.round(2 * this.power));
                     this.name = pickName(bossNamePool);
@@ -1529,6 +1531,8 @@
 
             updateBoss() {
                 this.timer++;
+                if (this.laserCd > 0) this.laserCd--;
+                if (this.excelCd > 0) this.excelCd--;
                 const angle = Math.atan2(player.y - this.y, player.x - this.x);
                 const distToPlayer = dist(this.x, this.y, player.x, player.y);
                 let slowFactor = 1;
@@ -1541,19 +1545,30 @@
                 if (this.state === 'charge') moveScale = 0.15;
                 if (this.state === 'laser') moveScale = 0.25;
                 const moveSpeed = this.speed * slowFactor * moveScale;
-                const desiredDist = 240;
-                const innerDist = 180;
-                const outerDist = 320;
-                if (distToPlayer > outerDist) {
-                    this.vx = Math.cos(angle) * moveSpeed;
-                    this.vy = Math.sin(angle) * moveSpeed;
-                } else if (distToPlayer < innerDist) {
-                    this.vx = -Math.cos(angle) * moveSpeed;
-                    this.vy = -Math.sin(angle) * moveSpeed;
+                const chasing = (this.state === 'idle' && (this.laserCd > 0 || this.excelCd > 0));
+                const desiredDist = chasing ? 140 : 240;
+                const innerDist = chasing ? 90 : 180;
+                const outerDist = chasing ? 220 : 320;
+                if (chasing) {
+                    if (distToPlayer < innerDist) {
+                        this.vx = -Math.cos(angle) * moveSpeed * 0.6;
+                        this.vy = -Math.sin(angle) * moveSpeed * 0.6;
+                    } else {
+                        this.vx = Math.cos(angle) * moveSpeed;
+                        this.vy = Math.sin(angle) * moveSpeed;
+                    }
                 } else {
-                    const orbitAngle = angle + Math.PI / 2;
-                    this.vx = Math.cos(orbitAngle) * moveSpeed * 0.7;
-                    this.vy = Math.sin(orbitAngle) * moveSpeed * 0.7;
+                    if (distToPlayer > outerDist) {
+                        this.vx = Math.cos(angle) * moveSpeed;
+                        this.vy = Math.sin(angle) * moveSpeed;
+                    } else if (distToPlayer < innerDist) {
+                        this.vx = -Math.cos(angle) * moveSpeed;
+                        this.vy = -Math.sin(angle) * moveSpeed;
+                    } else {
+                        const orbitAngle = angle + Math.PI / 2;
+                        this.vx = Math.cos(orbitAngle) * moveSpeed * 0.7;
+                        this.vy = Math.sin(orbitAngle) * moveSpeed * 0.7;
+                    }
                 }
                 this.x += this.vx;
                 this.y += this.vy;
@@ -1563,13 +1578,12 @@
                 }
 
                 if (this.state === 'idle') {
-                    // Attack 1: PPT Laser
-                    if (this.timer % 180 === 0) {
+                    // Attack 1: PPT Laser (with cooldown)
+                    if (this.laserCd <= 0) {
                         this.state = 'charge';
                         this.chargeTimer = 0;
-                    }
-                    // Attack 2: Excel Drop
-                    if (this.timer % 300 === 0) {
+                        this.laserCd = 300;
+                    } else if (this.excelCd <= 0) {
                         // Summon Excel falling blocks
                         AudioSys.playSound('excel');
                         // Creating dummy projectiles for visual
@@ -1592,6 +1606,7 @@
                                 update: function () { this.y += this.vy; this.life--; }
                             });
                         }
+                        this.excelCd = 360;
                     }
                 } else if (this.state === 'laser') {
                     this.laserTimer = (this.laserTimer || 0) + 1;
