@@ -28,45 +28,92 @@
             top: 0;
             left: 0;
             width: 100%;
-            height: 100%;
+            height: 70px;
             pointer-events: none;
             display: flex;
-            flex-direction: column;
-            justify-content: space-between;
-            padding: 36px 20px 20px;
+            align-items: center;
+            gap: 12px;
+            padding: 8px 16px;
             box-sizing: border-box;
+            background: linear-gradient(180deg, #fff4d6, #f2e1bb);
+            border-bottom: 3px solid #1b1b1b;
+            box-shadow: 0 4px 0 #000;
+            font-family: 'Smiley Sans', 'ZCOOL KuaiLe', 'ZCOOL QingKe HuangYou', 'STHeiti', 'Microsoft YaHei', sans-serif;
         }
 
-        .hud-text {
-            font-size: 24px;
-            font-weight: bold;
-            color: #333;
-            text-shadow: 2px 2px 0px #fff;
-            pointer-events: none;
-        }
-
-        #level-bar-wrap {
+        #ui-layer::before {
+            content: '';
             position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 28px;
+            inset: 0;
+            background-image: repeating-linear-gradient(135deg, rgba(0, 0, 0, 0.06) 0, rgba(0, 0, 0, 0.06) 6px, transparent 6px, transparent 12px);
+            opacity: 0.35;
             pointer-events: none;
-            z-index: 5;
         }
 
-        #level-bar {
+        #ui-layer > * {
             position: relative;
-            margin: 24px 16px 0;
-            height: 14px;
-            background: #2c2c2c;
-            border: 2px solid #1b1b1b;
-            border-radius: 6px;
-            box-shadow: 2px 2px 0px #000;
-            overflow: visible;
+            z-index: 1;
         }
 
-        #level-bar-fill {
+        .hud-card {
+            min-width: 96px;
+            padding: 6px 10px;
+            border: 2px solid #1b1b1b;
+            border-radius: 10px;
+            box-shadow: 2px 2px 0px #000;
+            text-align: center;
+            background: #ffe9a8;
+        }
+
+        .hud-label {
+            font-size: 10px;
+            font-weight: bold;
+            letter-spacing: 1px;
+            color: #6b4e00;
+        }
+
+        #kpi-value {
+            font-size: 18px;
+            font-weight: bold;
+            color: #1f1f1f;
+        }
+
+        #info-card {
+            background: #e0f2d9;
+        }
+
+        #info-card .hud-label {
+            color: #2c6a2c;
+        }
+
+        #next-exp {
+            font-size: 14px;
+            font-weight: bold;
+            color: #1f1f1f;
+        }
+
+        #exp-section {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            height: 100%;
+        }
+
+        #exp-track {
+            position: relative;
+            width: 100%;
+            max-width: 520px;
+            height: 14px;
+            background: #242424;
+            border: 2px solid #000;
+            border-radius: 999px;
+            overflow: hidden;
+            box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.2);
+        }
+
+        #exp-fill {
             position: absolute;
             left: 0;
             top: 0;
@@ -76,23 +123,19 @@
             z-index: 1;
         }
 
-        #level-exp-text {
+        #exp-text {
             position: absolute;
-            right: 6px;
+            right: 8px;
             top: 50%;
-            width: 100%;
-            height: 100%;
-            line-height: 14px;
-            text-align: right;
+            transform: translateY(-50%);
             font-size: 10px;
             font-weight: bold;
             color: #fff;
             text-shadow: 1px 1px 0px #000;
-            transform: translateY(-50%);
             z-index: 2;
         }
 
-        #level-badge {
+        #level-pill {
             position: absolute;
             top: 50%;
             left: 50%;
@@ -101,19 +144,11 @@
             color: #fff;
             font-size: 12px;
             font-weight: bold;
-            padding: 2px 10px;
+            padding: 2px 12px;
             border: 2px solid #fff;
             border-radius: 12px;
             box-shadow: 2px 2px 0px #000;
-            z-index: 10;
-        }
-
-        #level-display {
-            display: none;
-        }
-
-        #hp-display {
-            display: none;
+            z-index: 3;
         }
 
         #start-overlay,
@@ -231,17 +266,34 @@
                 font-size: 20px;
             }
 
-            #level-bar {
-                margin: 18px 10px 0;
+            #ui-layer {
+                height: 58px;
+                padding: 6px 10px;
+                gap: 8px;
+            }
+
+            .hud-card {
+                min-width: 80px;
+                padding: 4px 8px;
+            }
+
+            #kpi-value {
+                font-size: 16px;
+            }
+
+            #next-exp {
+                font-size: 12px;
+            }
+
+            #exp-track {
                 height: 12px;
             }
 
-            #level-exp-text {
-                line-height: 12px;
+            #exp-text {
                 font-size: 9px;
             }
 
-            #level-badge {
+            #level-pill {
                 font-size: 10px;
                 padding: 1px 8px;
             }
@@ -257,18 +309,22 @@
 
     <canvas id="gameCanvas"></canvas>
 
-    <div id="level-bar-wrap">
-        <div id="level-bar">
-            <div id="level-bar-fill"></div>
-            <div id="level-exp-text">0/0</div>
-            <div id="level-badge">LV. 1</div>
-        </div>
-    </div>
-
     <div id="ui-layer">
-        <div id="score-display" class="hud-text">KPI: 0</div>
-        <div id="level-display" class="hud-text">等级: 1</div>
-        <div id="hp-display" class="hud-text">活力值: 100%</div>
+        <div id="kpi-card" class="hud-card">
+            <div class="hud-label">KPI</div>
+            <div id="kpi-value">0</div>
+        </div>
+        <div id="exp-section">
+            <div id="exp-track">
+                <div id="exp-fill"></div>
+                <div id="exp-text">0/0</div>
+            </div>
+            <div id="level-pill">LV. 1</div>
+        </div>
+        <div id="info-card" class="hud-card">
+            <div class="hud-label">晋升</div>
+            <div id="next-exp">还需 0</div>
+        </div>
     </div>
 
     <div id="start-overlay">
@@ -1763,13 +1819,12 @@
             checkCollisions();
 
             // HUD
-            document.getElementById('score-display').innerText = `KPI: ${player.kpi}`;
-            document.getElementById('level-display').innerText = `等级: ${player.level} (${Math.floor(player.exp)}/${player.expToNext})`;
-            document.getElementById('hp-display').innerText = `活力值: ${Math.floor(player.hp)}/${player.maxHp}`;
+            kpiValue.innerText = `${player.kpi}`;
             const expRatio = Math.max(0, Math.min(1, player.exp / player.expToNext));
-            levelBarFill.style.width = `${Math.floor(expRatio * 100)}%`;
-            levelBadge.innerText = `LV. ${player.level}`;
-            levelExpText.innerText = `${Math.floor(player.exp)}/${player.expToNext}`;
+            expFill.style.width = `${Math.floor(expRatio * 100)}%`;
+            levelPill.innerText = `LV. ${player.level}`;
+            expText.innerText = `${Math.floor(player.exp)}/${player.expToNext}`;
+            nextExp.innerText = `还需 ${Math.max(0, player.expToNext - Math.floor(player.exp))}`;
         }
 
         function draw() {
@@ -1834,9 +1889,11 @@
         const upgradeOptions = document.getElementById('upgrade-options');
         const startBtn = document.getElementById('start-btn');
         const restartBtn = document.getElementById('restart-btn');
-        const levelBarFill = document.getElementById('level-bar-fill');
-        const levelBadge = document.getElementById('level-badge');
-        const levelExpText = document.getElementById('level-exp-text');
+        const kpiValue = document.getElementById('kpi-value');
+        const expFill = document.getElementById('exp-fill');
+        const expText = document.getElementById('exp-text');
+        const levelPill = document.getElementById('level-pill');
+        const nextExp = document.getElementById('next-exp');
 
         function startGame() {
             AudioSys.init();
