@@ -257,6 +257,117 @@
             font-size: 14px;
         }
 
+        #boss-warning {
+            position: absolute;
+            top: 70px;
+            left: 0;
+            width: 100%;
+            height: 38px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: repeating-linear-gradient(135deg, #ff4757 0, #ff4757 12px, #ff6b6b 12px, #ff6b6b 24px);
+            color: #fff;
+            border-top: 3px solid #111;
+            border-bottom: 3px solid #111;
+            text-shadow: 2px 2px 0px #000;
+            font-size: 18px;
+            font-weight: bold;
+            letter-spacing: 4px;
+            opacity: 0;
+            pointer-events: none;
+            z-index: 20;
+        }
+
+        #boss-warning.show {
+            animation: bossWarn 1.4s ease forwards;
+        }
+
+        #boss-flash {
+            position: absolute;
+            inset: 0;
+            background: radial-gradient(circle at center, rgba(255, 71, 87, 0.35), rgba(255, 71, 87, 0.15) 45%, rgba(255, 71, 87, 0) 70%);
+            opacity: 0;
+            pointer-events: none;
+            z-index: 15;
+        }
+
+        #boss-flash.show {
+            animation: bossFlash 1.2s ease forwards;
+        }
+
+        @keyframes bossWarn {
+            0% { opacity: 0; transform: translateY(-10px); }
+            10% { opacity: 1; transform: translateY(0); }
+            25% { opacity: 1; transform: translateY(0); }
+            40% { opacity: 0.7; transform: translateY(0); }
+            55% { opacity: 1; transform: translateY(0); }
+            70% { opacity: 0.7; transform: translateY(0); }
+            100% { opacity: 0; transform: translateY(0); }
+        }
+
+        @keyframes bossFlash {
+            0% { opacity: 0; }
+            20% { opacity: 0.5; }
+            50% { opacity: 0.25; }
+            100% { opacity: 0; }
+        }
+
+        @keyframes alarmShake {
+            0% { transform: translate(0, 0); }
+            20% { transform: translate(-2px, 1px); }
+            40% { transform: translate(2px, -1px); }
+            60% { transform: translate(-1px, -2px); }
+            80% { transform: translate(2px, 2px); }
+            100% { transform: translate(0, 0); }
+        }
+
+        body.alarm-shake {
+            animation: alarmShake 0.6s linear 1;
+        }
+
+        #joystick-wrap {
+            position: absolute;
+            left: 16px;
+            bottom: 20px;
+            width: 120px;
+            height: 120px;
+            pointer-events: none;
+            z-index: 6;
+            opacity: 0;
+            transform: scale(0.95);
+            transition: opacity 0.12s ease, transform 0.12s ease;
+        }
+
+        #joystick-wrap.active {
+            opacity: 1;
+            transform: scale(1);
+        }
+
+        #joystick-base {
+            position: relative;
+            width: 120px;
+            height: 120px;
+            border-radius: 50%;
+            border: 2px solid #000;
+            background: rgba(255, 255, 255, 0.6);
+            box-shadow: 4px 4px 0px #000;
+            pointer-events: auto;
+        }
+
+        #joystick-stick {
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            width: 48px;
+            height: 48px;
+            border-radius: 50%;
+            background: #111;
+            border: 2px solid #fff;
+            box-shadow: 2px 2px 0px #000;
+            transform: translate(-50%, -50%);
+        }
+
         @media (max-width: 768px) {
             h1 {
                 font-size: 40px;
@@ -301,6 +412,29 @@
             #mobile-controls {
                 display: block;
             }
+
+            #boss-warning {
+                top: 58px;
+                height: 32px;
+                font-size: 16px;
+            }
+
+            #joystick-wrap {
+                left: 10px;
+                bottom: 16px;
+                width: 110px;
+                height: 110px;
+            }
+
+            #joystick-base {
+                width: 110px;
+                height: 110px;
+            }
+
+            #joystick-stick {
+                width: 44px;
+                height: 44px;
+            }
         }
     </style>
 </head>
@@ -327,6 +461,9 @@
         </div>
     </div>
 
+    <div id="boss-warning">BOSS 入场</div>
+    <div id="boss-flash"></div>
+
     <div id="start-overlay">
         <h1>社畜无双</h1>
         <p>在无尽的格子间里，用键盘和咖啡杀出一条血路！<br>
@@ -350,6 +487,11 @@
     </div>
 
     <div id="mobile-controls">拖动屏幕移动 • 自动攻击</div>
+    <div id="joystick-wrap">
+        <div id="joystick-base">
+            <div id="joystick-stick"></div>
+        </div>
+    </div>
 
     <script>
         /**
@@ -499,6 +641,8 @@
         const keys = {};
         const mouse = { x: screenWidth / 2, y: screenHeight / 2, down: false };
         const joystick = { active: false, dx: 0, dy: 0, originX: 0, originY: 0 };
+        let joystickPointerId = null;
+        let joystickMode = 'fixed';
 
         window.addEventListener('keydown', e => keys[e.key] = true);
         window.addEventListener('keyup', e => keys[e.key] = false);
@@ -506,30 +650,129 @@
         window.addEventListener('mousedown', () => mouse.down = true);
         window.addEventListener('mouseup', () => mouse.down = false);
 
-        // Touch Controls
-        window.addEventListener('touchstart', e => {
-            joystick.active = true;
-            joystick.originX = e.touches[0].clientX;
-            joystick.originY = e.touches[0].clientY;
-            joystick.dx = 0;
-            joystick.dy = 0;
-        }, { passive: false });
+        const joystickWrap = document.getElementById('joystick-wrap');
+        const joystickBase = document.getElementById('joystick-base');
+        const joystickStick = document.getElementById('joystick-stick');
 
-        window.addEventListener('touchmove', e => {
-            if (joystick.active) {
-                e.preventDefault();
-                const touchX = e.touches[0].clientX;
-                const touchY = e.touches[0].clientY;
-                joystick.dx = touchX - joystick.originX;
-                joystick.dy = touchY - joystick.originY;
+        function setJoystick(dx, dy, maxDist) {
+            const len = Math.hypot(dx, dy);
+            let nx = dx;
+            let ny = dy;
+            if (len > maxDist) {
+                const scale = maxDist / len;
+                nx *= scale;
+                ny *= scale;
             }
-        }, { passive: false });
+            joystick.dx = nx;
+            joystick.dy = ny;
+            joystickStick.style.transform = `translate(-50%, -50%) translate(${nx}px, ${ny}px)`;
+        }
 
-        window.addEventListener('touchend', () => {
+        function resetJoystick() {
             joystick.active = false;
             joystick.dx = 0;
             joystick.dy = 0;
+            joystickPointerId = null;
+            joystickMode = 'fixed';
+            joystickStick.style.transform = 'translate(-50%, -50%)';
+            joystickWrap.style.left = '';
+            joystickWrap.style.top = '';
+            joystickWrap.style.bottom = '';
+            joystickWrap.classList.remove('active');
+        }
+
+        function handleJoystickMove(clientX, clientY) {
+            const rect = joystickBase.getBoundingClientRect();
+            const centerX = rect.left + rect.width / 2;
+            const centerY = rect.top + rect.height / 2;
+            joystick.originX = centerX;
+            joystick.originY = centerY;
+            setJoystick(clientX - centerX, clientY - centerY, rect.width * 0.35);
+        }
+
+        function handleFreeMove(clientX, clientY) {
+            const rect = joystickBase.getBoundingClientRect();
+            const maxDist = rect.width * 0.35;
+            setJoystick(clientX - joystick.originX, clientY - joystick.originY, maxDist);
+        }
+
+        function startJoystick(pointerId, clientX, clientY, mode) {
+            joystick.active = true;
+            joystickPointerId = pointerId;
+            joystickMode = mode;
+            joystickWrap.classList.add('active');
+            if (mode === 'free') {
+                const rect = joystickBase.getBoundingClientRect();
+                joystickWrap.style.left = `${clientX - rect.width / 2}px`;
+                joystickWrap.style.top = `${clientY - rect.height / 2}px`;
+                joystickWrap.style.bottom = 'auto';
+                joystick.originX = clientX;
+                joystick.originY = clientY;
+                setJoystick(0, 0, rect.width * 0.35);
+            } else {
+                handleJoystickMove(clientX, clientY);
+            }
+        }
+
+        joystickBase.addEventListener('pointerdown', (e) => {
+            e.preventDefault();
+            startJoystick(e.pointerId, e.clientX, e.clientY, 'fixed');
+            joystickBase.setPointerCapture(joystickPointerId);
         });
+
+        joystickBase.addEventListener('pointermove', (e) => {
+            if (!joystick.active || joystickPointerId !== e.pointerId) return;
+            e.preventDefault();
+            if (joystickMode === 'free') {
+                handleFreeMove(e.clientX, e.clientY);
+            } else {
+                handleJoystickMove(e.clientX, e.clientY);
+            }
+        });
+
+        joystickBase.addEventListener('pointerup', (e) => {
+            if (joystickPointerId !== e.pointerId) return;
+            if (joystickBase.hasPointerCapture(joystickPointerId)) {
+                joystickBase.releasePointerCapture(joystickPointerId);
+            }
+            resetJoystick();
+        });
+
+        joystickBase.addEventListener('pointercancel', (e) => {
+            if (joystickPointerId !== e.pointerId) return;
+            if (joystickBase.hasPointerCapture(joystickPointerId)) {
+                joystickBase.releasePointerCapture(joystickPointerId);
+            }
+            resetJoystick();
+        });
+
+        window.addEventListener('pointerdown', (e) => {
+            if (gameData.state !== 'playing') return;
+            if (joystick.active) return;
+            if (e.button !== undefined && e.button !== 0) return;
+            if (e.target.closest && e.target.closest('#joystick-base')) return;
+            if (e.target.closest && (e.target.closest('#start-overlay') || e.target.closest('#level-up-overlay') || e.target.closest('#game-over-overlay'))) return;
+            startJoystick(e.pointerId, e.clientX, e.clientY, 'free');
+        });
+
+        window.addEventListener('pointermove', (e) => {
+            if (!joystick.active || joystickPointerId !== e.pointerId) return;
+            if (joystickMode === 'free') {
+                handleFreeMove(e.clientX, e.clientY);
+            }
+        });
+
+        window.addEventListener('pointerup', (e) => {
+            if (!joystick.active || joystickPointerId !== e.pointerId) return;
+            resetJoystick();
+        });
+
+        window.addEventListener('pointercancel', (e) => {
+            if (!joystick.active || joystickPointerId !== e.pointerId) return;
+            resetJoystick();
+        });
+
+        window.addEventListener('blur', resetJoystick);
 
         // Math Utils
         const rand = (min, max) => Math.random() * (max - min) + min;
@@ -760,10 +1003,12 @@
         // Pickups
         const drops = [];
         class Drop {
-            constructor(x, y) {
+            constructor(x, y, expValue = 10) {
                 this.x = x;
                 this.y = y;
-                this.radius = 10;
+                this.expValue = expValue;
+                const sizeScale = Math.min(3.2, 0.7 + Math.pow(this.expValue / 12, 0.38));
+                this.radius = 7 * sizeScale;
                 this.bob = rand(0, Math.PI * 2);
             }
             update() {
@@ -775,13 +1020,15 @@
                 ctx.strokeStyle = '#000';
                 ctx.lineWidth = 2;
                 ctx.beginPath();
-                ctx.arc(this.x, this.y + oy, 8, 0, Math.PI * 2);
+                ctx.arc(this.x, this.y + oy, this.radius, 0, Math.PI * 2);
                 ctx.fill();
                 ctx.stroke();
 
                 ctx.fillStyle = '#000';
-                ctx.font = '10px sans-serif';
-                ctx.fillText('¥', this.x - 3, this.y + oy + 4);
+                ctx.font = `bold ${Math.max(10, this.radius * 1.1)}px sans-serif`;
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText('¥', this.x, this.y + oy + 1);
             }
         }
 
@@ -1246,25 +1493,44 @@
 
             updateBoss() {
                 this.timer++;
-                const anchorX = player.x;
-                const anchorY = player.y;
-                const followX = anchorX + Math.sin(this.timer * 0.02) * 60;
-                const followY = anchorY + Math.cos(this.timer * 0.017) * 40;
+                const angle = Math.atan2(player.y - this.y, player.x - this.x);
+                const distToPlayer = dist(this.x, this.y, player.x, player.y);
+                let slowFactor = 1;
+                for (const zone of coffeeZones) {
+                    if (dist(this.x, this.y, zone.x, zone.y) < zone.radius + this.radius) {
+                        slowFactor = Math.min(slowFactor, zone.slow);
+                    }
+                }
+                let moveScale = 1;
+                if (this.state === 'charge') moveScale = 0.15;
+                if (this.state === 'laser') moveScale = 0.25;
+                const moveSpeed = this.speed * slowFactor * moveScale;
+                const desiredDist = 240;
+                const innerDist = 180;
+                const outerDist = 320;
+                if (distToPlayer > outerDist) {
+                    this.vx = Math.cos(angle) * moveSpeed;
+                    this.vy = Math.sin(angle) * moveSpeed;
+                } else if (distToPlayer < innerDist) {
+                    this.vx = -Math.cos(angle) * moveSpeed;
+                    this.vy = -Math.sin(angle) * moveSpeed;
+                } else {
+                    const orbitAngle = angle + Math.PI / 2;
+                    this.vx = Math.cos(orbitAngle) * moveSpeed * 0.7;
+                    this.vy = Math.sin(orbitAngle) * moveSpeed * 0.7;
+                }
+                this.x += this.vx;
+                this.y += this.vy;
 
                 if (this.state === 'enter') {
-                    this.x = lerp(this.x, followX, 0.06);
-                    this.y = lerp(this.y, followY, 0.06);
-                    if (dist(this.x, this.y, anchorX, anchorY) < 90) this.state = 'idle';
-                } else if (this.state === 'idle') {
-                    // Follow with slight orbit
-                    this.x = lerp(this.x, followX, 0.03);
-                    this.y = lerp(this.y, followY, 0.03);
+                    this.state = 'idle';
+                }
 
+                if (this.state === 'idle') {
                     // Attack 1: PPT Laser
                     if (this.timer % 180 === 0) {
-                        this.state = 'laser';
-                        AudioSys.playSound('laser');
-                        gameData.freeze = 5;
+                        this.state = 'charge';
+                        this.chargeTimer = 0;
                     }
                     // Attack 2: Excel Drop
                     if (this.timer % 300 === 0) {
@@ -1292,19 +1558,52 @@
                         }
                     }
                 } else if (this.state === 'laser') {
-                    // Keep following while firing
-                    this.x = lerp(this.x, followX, 0.02);
-                    this.y = lerp(this.y, followY, 0.02);
-                    if (this.timer % 20 === 0) {
-                        const angle = Math.atan2(player.y - this.y, player.x - this.x);
-                        projectiles.push(new Projectile(this.x, this.y, player.x, player.y, 'enemy_hr', {
-                            owner: 'enemy',
-                            speed: 6,
-                            damage: this.projectileDamage || 2,
-                            size: 1
-                        }));
+                    this.laserTimer = (this.laserTimer || 0) + 1;
+                    if (this.laserTimer % 10 === 0) {
+                        const petalCount = 8;
+                        const baseAngle = this.laserTimer * 0.12;
+                        for (let i = 0; i < petalCount; i++) {
+                            const angle = baseAngle + (Math.PI * 2 / petalCount) * i;
+                            const tx = this.x + Math.cos(angle) * 220;
+                            const ty = this.y + Math.sin(angle) * 220;
+                            projectiles.push(new Projectile(this.x, this.y, tx, ty, 'enemy_hr', {
+                                owner: 'enemy',
+                                speed: 5.4,
+                                damage: this.projectileDamage || 2,
+                                size: 1
+                            }));
+                        }
                     }
-                    if (this.timer % 180 === 60) this.state = 'idle';
+
+                    if (this.laserTimer % 20 === 0) {
+                        const innerCount = 5;
+                        const innerAngle = -this.laserTimer * 0.1;
+                        for (let i = 0; i < innerCount; i++) {
+                            const angle = innerAngle + (Math.PI * 2 / innerCount) * i;
+                            const tx = this.x + Math.cos(angle) * 180;
+                            const ty = this.y + Math.sin(angle) * 180;
+                            projectiles.push(new Projectile(this.x, this.y, tx, ty, 'enemy_hr', {
+                                owner: 'enemy',
+                                speed: 4.9,
+                                damage: this.projectileDamage || 2,
+                                size: 1
+                            }));
+                        }
+                    }
+
+                    if (this.laserTimer >= 140) {
+                        this.state = 'idle';
+                    }
+                } else if (this.state === 'charge') {
+                    this.chargeTimer++;
+                    if (this.chargeTimer === 12) {
+                        AudioSys.playSound('laser');
+                        gameData.freeze = 5;
+                    }
+                    if (this.chargeTimer >= 30) {
+                        this.state = 'laser';
+                        this.laserTimer = 0;
+                    }
                 }
             }
 
@@ -1681,7 +1980,8 @@
         function defeatEnemy(e) {
             if (e.markedForDeletion) return;
             e.markedForDeletion = true;
-            drops.push(new Drop(e.x, e.y));
+            const dropExp = Math.min(900, Math.max(5, Math.round(e.score * 0.5)));
+            drops.push(new Drop(e.x, e.y, dropExp));
             player.kpi += e.score;
             addExperience(e.score);
             if (player.killHeal > 0) {
@@ -1766,7 +2066,7 @@
                 if (distToPlayer < player.body.radius + 10) {
                     drops.splice(i, 1);
                     player.kpi += 10;
-                    addExperience(10);
+                    addExperience(d.expValue || 10);
                     AudioSys.playSound('coin');
                     // Heal small amount
                     player.hp = Math.min(player.maxHp, player.hp + 2);
@@ -1825,22 +2125,40 @@
 
             const spawnRate = Math.max(12, 70 - Math.floor(gameData.waveTimer / 45)); // Increases over time
 
-            if (gameData.waveTimer % spawnRate === 0) {
-                let type = Math.random() > 0.8 ? 'manager' : 'colleague';
-                if (type === 'manager' && countEnemiesByType('manager') >= 8) {
-                    type = 'colleague';
+            if (countEnemiesByType('boss') === 0) {
+                if (gameData.waveTimer % spawnRate === 0) {
+                    let type = Math.random() > 0.8 ? 'manager' : 'colleague';
+                    if (type === 'manager' && countEnemiesByType('manager') >= 8) {
+                        type = 'colleague';
+                    }
+                    enemies.push(new Enemy(type));
                 }
-                enemies.push(new Enemy(type));
             }
 
             // Boss Spawn
             if (gameData.waveTimer === 5400 || gameData.waveTimer === 14400) { // 90s, 240s
                 if (countEnemiesByType('boss') < 1) {
                     enemies.push(new Enemy('boss'));
+                    showBossWarning();
                 }
                 // Clear small enemies
                 // enemies.forEach(e => { if (e.type !== 'boss') e.hp = 0; });
             }
+        }
+
+        function showBossWarning() {
+            bossWarning.classList.remove('show');
+            bossFlash.classList.remove('show');
+            void bossWarning.offsetWidth;
+            bossWarning.classList.add('show');
+            bossFlash.classList.add('show');
+            gameData.shake = Math.max(gameData.shake, 12);
+            document.body.classList.add('alarm-shake');
+            setTimeout(() => {
+                bossWarning.classList.remove('show');
+                bossFlash.classList.remove('show');
+                document.body.classList.remove('alarm-shake');
+            }, 1200);
         }
 
         function update() {
@@ -1960,6 +2278,8 @@
         const upgradeOptions = document.getElementById('upgrade-options');
         const startBtn = document.getElementById('start-btn');
         const restartBtn = document.getElementById('restart-btn');
+        const bossWarning = document.getElementById('boss-warning');
+        const bossFlash = document.getElementById('boss-flash');
         const kpiValue = document.getElementById('kpi-value');
         const expFill = document.getElementById('exp-fill');
         const expText = document.getElementById('exp-text');
