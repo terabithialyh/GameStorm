@@ -1,0 +1,1454 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>社畜无双 - Corporate Slave Musou</title>
+    <style>
+        body,
+        html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #f0f4f8;
+            /* Office Wall Color */
+            font-family: 'Microsoft YaHei', 'SimHei', sans-serif;
+            touch-action: none;
+        }
+
+        canvas {
+            display: block;
+        }
+
+        #ui-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+
+        .hud-text {
+            font-size: 24px;
+            font-weight: bold;
+            color: #333;
+            text-shadow: 2px 2px 0px #fff;
+            pointer-events: none;
+        }
+
+        #start-overlay,
+        #game-over-overlay,
+        #level-up-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.85);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            color: white;
+            z-index: 10;
+            pointer-events: auto;
+            backdrop-filter: blur(5px);
+        }
+
+        h1 {
+            font-size: 60px;
+            margin: 0 0 20px 0;
+            color: #ffcc00;
+            text-shadow: 4px 4px 0px #000;
+            text-align: center;
+            transform: rotate(-2deg);
+        }
+
+        p {
+            font-size: 20px;
+            max-width: 600px;
+            text-align: center;
+            line-height: 1.6;
+        }
+
+        .btn {
+            background: #ff4757;
+            color: white;
+            border: 4px solid #000;
+            padding: 15px 40px;
+            font-size: 28px;
+            font-weight: bold;
+            cursor: pointer;
+            margin-top: 30px;
+            transition: transform 0.1s;
+            box-shadow: 6px 6px 0px #000;
+        }
+
+        .btn:active {
+            transform: translate(4px, 4px);
+            box-shadow: 2px 2px 0px #000;
+        }
+
+        .hidden {
+            display: none !important;
+        }
+
+        .upgrade-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            width: 90%;
+            max-width: 900px;
+            margin-top: 30px;
+        }
+
+        .upgrade-card {
+            background: #fff9db;
+            border: 4px solid #000;
+            box-shadow: 6px 6px 0px #000;
+            padding: 18px;
+            text-align: left;
+            cursor: pointer;
+            transition: transform 0.1s;
+            pointer-events: auto;
+        }
+
+        .upgrade-card:active {
+            transform: translate(4px, 4px);
+            box-shadow: 2px 2px 0px #000;
+        }
+
+        .upgrade-title {
+            font-size: 24px;
+            font-weight: bold;
+            color: #222;
+            margin-bottom: 8px;
+        }
+
+        .upgrade-desc {
+            font-size: 16px;
+            color: #333;
+            line-height: 1.4;
+        }
+
+        /* Mobile controls hint */
+        #mobile-controls {
+            display: none;
+            position: absolute;
+            bottom: 20px;
+            width: 100%;
+            text-align: center;
+            color: rgba(0, 0, 0, 0.5);
+            font-size: 14px;
+        }
+
+        @media (max-width: 768px) {
+            h1 {
+                font-size: 40px;
+            }
+
+            .upgrade-title {
+                font-size: 20px;
+            }
+
+            #mobile-controls {
+                display: block;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <canvas id="gameCanvas"></canvas>
+
+    <div id="ui-layer">
+        <div id="score-display" class="hud-text">KPI: 0</div>
+        <div id="level-display" class="hud-text">等级: 1</div>
+        <div id="hp-display" class="hud-text">精力值: 100%</div>
+    </div>
+
+    <div id="start-overlay">
+        <h1>社畜无双</h1>
+        <p>在无尽的格子间里，用键盘和咖啡杀出一条血路！<br>
+            WSAD / 触摸移动，鼠标 / 自动瞄准攻击。<br>
+            击败同事，躲避PPT，小心周一例会！</p>
+        <button id="start-btn" class="btn">办理入职 (点击开始)</button>
+    </div>
+
+    <div id="game-over-overlay" class="hidden">
+        <h1 style="color: #ff4757;">被优化了</h1>
+        <p id="final-score">KPI 达成率: 0</p>
+        <p>HR: "很遗憾，你未能通过试用期。"</p>
+        <button id="restart-btn" class="btn">投递简历 (重新开始)</button>
+    </div>
+
+    <div id="level-up-overlay" class="hidden">
+        <h1>升职加薪</h1>
+        <p>请选择一项强化</p>
+        <p style="font-size: 16px; opacity: 0.8;">可按 1 / 2 / 3 快速选择</p>
+        <div id="upgrade-options" class="upgrade-grid"></div>
+    </div>
+
+    <div id="mobile-controls">拖动屏幕移动 • 自动攻击</div>
+
+    <script>
+        /**
+         * AUDIO SYSTEM
+         * Synthesizes sound effects using Web Audio API to mimic office sounds.
+         */
+        const AudioSys = (() => {
+            let ctx = null;
+            let masterGain = null;
+
+            function init() {
+                if (!ctx) {
+                    ctx = new (window.AudioContext || window.webkitAudioContext)();
+                    masterGain = ctx.createGain();
+                    masterGain.gain.value = 0.4;
+                    masterGain.connect(ctx.destination);
+                }
+                if (ctx.state === 'suspended') ctx.resume();
+            }
+
+            // Generate White Noise Buffer
+            let noiseBuffer = null;
+            function getNoiseBuffer() {
+                if (!noiseBuffer && ctx) {
+                    const bufferSize = ctx.sampleRate * 2; // 2 seconds
+                    noiseBuffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+                    const output = noiseBuffer.getChannelData(0);
+                    for (let i = 0; i < bufferSize; i++) {
+                        output[i] = Math.random() * 2 - 1;
+                    }
+                }
+                return noiseBuffer;
+            }
+
+            function playSound(type) {
+                if (!ctx) return;
+
+                const t = ctx.currentTime;
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+
+                switch (type) {
+                    case 'shoot': // Keyboard click (high pitch click)
+                        osc.type = 'square';
+                        osc.frequency.setValueAtTime(800, t);
+                        osc.frequency.exponentialRampToValueAtTime(100, t + 0.05);
+                        gain.gain.setValueAtTime(0.3, t);
+                        gain.gain.exponentialRampToValueAtTime(0.01, t + 0.05);
+                        osc.connect(gain);
+                        gain.connect(masterGain);
+                        osc.start(t);
+                        osc.stop(t + 0.05);
+                        break;
+
+                    case 'hit': // Thud (soft body impact)
+                        osc.type = 'triangle';
+                        osc.frequency.setValueAtTime(150, t);
+                        osc.frequency.exponentialRampToValueAtTime(40, t + 0.15);
+                        gain.gain.setValueAtTime(0.5, t);
+                        gain.gain.exponentialRampToValueAtTime(0.01, t + 0.15);
+                        osc.connect(gain);
+                        gain.connect(masterGain);
+                        osc.start(t);
+                        osc.stop(t + 0.2);
+                        break;
+
+                    case 'paper': // Whoosh (Paper storm)
+                        const noise = ctx.createBufferSource();
+                        noise.buffer = getNoiseBuffer();
+                        const filter = ctx.createBiquadFilter();
+                        filter.type = 'bandpass';
+                        filter.Q.value = 1;
+                        filter.frequency.setValueAtTime(800, t);
+                        filter.frequency.linearRampToValueAtTime(2000, t + 0.2);
+
+                        gain.gain.setValueAtTime(0.4, t);
+                        gain.gain.linearRampToValueAtTime(0, t + 0.2);
+
+                        noise.connect(filter);
+                        filter.connect(gain);
+                        gain.connect(masterGain);
+                        noise.start(t);
+                        noise.stop(t + 0.2);
+                        break;
+
+                    case 'coin': // KPI pickup
+                        osc.type = 'sine';
+                        osc.frequency.setValueAtTime(1200, t);
+                        osc.frequency.setValueAtTime(1600, t + 0.1);
+                        gain.gain.setValueAtTime(0.3, t);
+                        gain.gain.linearRampToValueAtTime(0, t + 0.2);
+                        osc.connect(gain);
+                        gain.connect(masterGain);
+                        osc.start(t);
+                        osc.stop(t + 0.2);
+                        break;
+
+                    case 'laser': // PPT Laser
+                        osc.type = 'sawtooth';
+                        osc.frequency.setValueAtTime(800, t);
+                        osc.frequency.linearRampToValueAtTime(200, t + 0.5);
+                        gain.gain.setValueAtTime(0.2, t);
+                        gain.gain.linearRampToValueAtTime(0, t + 0.5);
+                        osc.connect(gain);
+                        gain.connect(masterGain);
+                        osc.start(t);
+                        osc.stop(t + 0.5);
+                        break;
+
+                    case 'excel': // Heavy impact
+                        osc.type = 'square';
+                        osc.frequency.setValueAtTime(50, t);
+                        osc.frequency.exponentialRampToValueAtTime(10, t + 0.4);
+                        gain.gain.setValueAtTime(0.8, t);
+                        gain.gain.exponentialRampToValueAtTime(0.01, t + 0.5);
+                        osc.connect(gain);
+                        gain.connect(masterGain);
+                        osc.start(t);
+                        osc.stop(t + 0.5);
+                        break;
+                }
+            }
+
+            return { init, playSound };
+        })();
+
+        /**
+         * GAME ENGINE & UTILS
+         */
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        let screenWidth = window.innerWidth;
+        let screenHeight = window.innerHeight;
+        let isMobile = ('ontouchstart' in window);
+
+        function resize() {
+            screenWidth = window.innerWidth;
+            screenHeight = window.innerHeight;
+            canvas.width = screenWidth;
+            canvas.height = screenHeight;
+        }
+        window.addEventListener('resize', resize);
+        resize();
+
+        // Input State
+        const keys = {};
+        const mouse = { x: screenWidth / 2, y: screenHeight / 2, down: false };
+        const joystick = { active: false, dx: 0, dy: 0, originX: 0, originY: 0 };
+
+        window.addEventListener('keydown', e => keys[e.key] = true);
+        window.addEventListener('keyup', e => keys[e.key] = false);
+        window.addEventListener('mousemove', e => { mouse.x = e.clientX; mouse.y = e.clientY; });
+        window.addEventListener('mousedown', () => mouse.down = true);
+        window.addEventListener('mouseup', () => mouse.down = false);
+
+        // Touch Controls
+        window.addEventListener('touchstart', e => {
+            joystick.active = true;
+            joystick.originX = e.touches[0].clientX;
+            joystick.originY = e.touches[0].clientY;
+            joystick.dx = 0;
+            joystick.dy = 0;
+        }, { passive: false });
+
+        window.addEventListener('touchmove', e => {
+            if (joystick.active) {
+                e.preventDefault();
+                const touchX = e.touches[0].clientX;
+                const touchY = e.touches[0].clientY;
+                joystick.dx = touchX - joystick.originX;
+                joystick.dy = touchY - joystick.originY;
+            }
+        }, { passive: false });
+
+        window.addEventListener('touchend', () => {
+            joystick.active = false;
+            joystick.dx = 0;
+            joystick.dy = 0;
+        });
+
+        // Math Utils
+        const rand = (min, max) => Math.random() * (max - min) + min;
+        const dist = (x1, y1, x2, y2) => Math.hypot(x2 - x1, y2 - y1);
+        const lerp = (a, b, t) => a + (b - a) * t;
+
+        // Camera (world -> screen)
+        const camera = { x: 0, y: 0 };
+        function updateCamera() {
+            camera.x = player.x - screenWidth / 2;
+            camera.y = player.y - screenHeight / 2;
+        }
+        function screenToWorld(x, y) {
+            return { x: x + camera.x, y: y + camera.y };
+        }
+
+        /**
+         * JELLY PHYSICS SYSTEM
+         * Implements a soft-body blob using a central point and radial vertices.
+         */
+        class JellyBody {
+            constructor(x, y, radius, color, points = 8) {
+                this.x = x;
+                this.y = y;
+                this.radius = radius;
+                this.color = color;
+                this.points = [];
+                this.angleStep = (Math.PI * 2) / points;
+
+                // Spring properties
+                this.stiffness = 0.15;
+                this.damping = 0.8;
+
+                for (let i = 0; i < points; i++) {
+                    const angle = i * this.angleStep;
+                    this.points.push({
+                        x: Math.cos(angle) * radius, // Relative pos
+                        y: Math.sin(angle) * radius,
+                        ox: Math.cos(angle) * radius, // Original rest pos
+                        oy: Math.sin(angle) * radius,
+                        vx: 0,
+                        vy: 0
+                    });
+                }
+            }
+
+            update(dt) {
+                // Soft body simulation
+                for (let p of this.points) {
+                    // Hooke's law: Force towards original position
+                    const ax = (p.ox - p.x) * this.stiffness;
+                    const ay = (p.oy - p.y) * this.stiffness;
+
+                    p.vx += ax;
+                    p.vy += ay;
+                    p.vx *= this.damping;
+                    p.vy *= this.damping;
+
+                    p.x += p.vx;
+                    p.y += p.vy;
+                }
+            }
+
+            draw(ctx) {
+                ctx.fillStyle = this.color;
+                ctx.strokeStyle = '#000';
+                ctx.lineWidth = 3;
+                ctx.lineJoin = 'round';
+
+                ctx.beginPath();
+                // Draw curve through points
+                const first = this.points[0];
+                // Start from midpoint between last and first to make it smooth loop
+                const last = this.points[this.points.length - 1];
+                let midX = (this.x + last.x + this.x + first.x) / 2;
+                let midY = (this.y + last.y + this.y + first.y) / 2;
+
+                ctx.moveTo(midX, midY);
+
+                for (let i = 0; i < this.points.length; i++) {
+                    const p = this.points[i];
+                    const nextIndex = (i + 1) % this.points.length;
+                    const nextP = this.points[nextIndex];
+                    const nextMidX = (this.x + p.x + this.x + nextP.x) / 2;
+                    const nextMidY = (this.y + p.y + this.y + nextP.y) / 2;
+
+                    ctx.quadraticCurveTo(this.x + p.x, this.y + p.y, nextMidX, nextMidY);
+                }
+
+                ctx.fill();
+                ctx.stroke();
+            }
+
+            deform(dx, dy, force) {
+                // Apply force to points roughly in direction of movement
+                // Or random noise
+                for (let p of this.points) {
+                    p.vx -= dx * force * rand(0.5, 1.5);
+                    p.vy -= dy * force * rand(0.5, 1.5);
+                }
+            }
+
+            hit(angle, force) {
+                // Push points inward based on hit angle
+                for (let i = 0; i < this.points.length; i++) {
+                    const pAngle = i * this.angleStep;
+                    const diff = Math.atan2(Math.sin(pAngle - angle), Math.cos(pAngle - angle));
+                    if (Math.abs(diff) < 1.5) {
+                        const impact = Math.cos(diff) * force;
+                        this.points[i].vx -= Math.cos(pAngle) * impact;
+                        this.points[i].vy -= Math.sin(pAngle) * impact;
+                    }
+                }
+            }
+        }
+
+        /**
+         * GAME OBJECTS
+         */
+
+        // Particles for Juice
+        const particles = [];
+        class Particle {
+            constructor(x, y, color, size, speed) {
+                this.x = x;
+                this.y = y;
+                this.color = color;
+                this.size = size;
+                const angle = rand(0, Math.PI * 2);
+                this.vx = Math.cos(angle) * speed;
+                this.vy = Math.sin(angle) * speed;
+                this.life = 1.0;
+                this.decay = rand(0.02, 0.05);
+                this.gravity = 0.2;
+            }
+            update() {
+                this.x += this.vx;
+                this.y += this.vy;
+                this.vy += this.gravity; // Gravity
+                this.life -= this.decay;
+                this.vx *= 0.9;
+            }
+            draw(ctx) {
+                ctx.globalAlpha = this.life;
+                ctx.fillStyle = this.color;
+                ctx.fillRect(this.x, this.y, this.size, this.size);
+                ctx.globalAlpha = 1;
+            }
+        }
+
+        function spawnParticles(x, y, color, count = 10) {
+            for (let i = 0; i < count; i++) {
+                particles.push(new Particle(x, y, color, rand(3, 8), rand(2, 8)));
+            }
+        }
+
+        // Projectiles
+        const projectiles = [];
+        class Projectile {
+            constructor(x, y, tx, ty, type) {
+                this.x = x;
+                this.y = y;
+                this.type = type;
+                const angle = Math.atan2(ty - y, tx - x);
+                this.vx = Math.cos(angle) * 10;
+                this.vy = Math.sin(angle) * 10;
+                this.life = 100;
+                this.radius = 10;
+
+                // Visual
+                this.char = 'A';
+                if (type === 'keyboard') {
+                    const chars = ['K', 'P', 'I', 'Q', 'W', 'E', 'R', 'T', 'Y'];
+                    this.char = chars[Math.floor(Math.random() * chars.length)];
+                }
+            }
+            update() {
+                this.x += this.vx;
+                this.y += this.vy;
+                this.life--;
+            }
+            draw(ctx) {
+                ctx.save();
+                ctx.translate(this.x, this.y);
+
+                if (this.type === 'keyboard') {
+                    ctx.fillStyle = '#333';
+                    ctx.fillRect(-10, -10, 20, 20);
+                    ctx.fillStyle = '#fff';
+                    ctx.font = 'bold 14px sans-serif';
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    ctx.fillText(this.char, 0, 1);
+                } else if (this.type === 'paper') {
+                    ctx.fillStyle = '#fff';
+                    ctx.strokeStyle = '#000';
+                    ctx.lineWidth = 2;
+                    ctx.rotate(this.life * 0.2);
+                    ctx.fillRect(-8, -12, 16, 24);
+                    ctx.strokeRect(-8, -12, 16, 24);
+                } else if (this.type === 'enemy_hr') {
+                    ctx.fillStyle = '#ff4757';
+                    ctx.beginPath();
+                    ctx.arc(0, 0, 8, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+
+                ctx.restore();
+            }
+        }
+
+        // Pickups
+        const drops = [];
+        class Drop {
+            constructor(x, y) {
+                this.x = x;
+                this.y = y;
+                this.radius = 10;
+                this.bob = rand(0, Math.PI * 2);
+            }
+            update() {
+                this.bob += 0.1;
+            }
+            draw(ctx) {
+                const oy = Math.sin(this.bob) * 5;
+                ctx.fillStyle = '#ffd32a';
+                ctx.strokeStyle = '#000';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.arc(this.x, this.y + oy, 8, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.stroke();
+
+                ctx.fillStyle = '#000';
+                ctx.font = '10px sans-serif';
+                ctx.fillText('¥', this.x - 3, this.y + oy + 4);
+            }
+        }
+
+        // Coffee Zones (slow + damage over time)
+        const coffeeZones = [];
+        class CoffeeZone {
+            constructor(x, y, level) {
+                this.x = x;
+                this.y = y;
+                this.level = level;
+                this.radius = 70 + level * 15;
+                this.life = 240 + level * 60;
+                this.tick = 0;
+                this.slow = Math.max(0.35, 0.75 - level * 0.1);
+            }
+            update() {
+                this.life--;
+                this.tick++;
+                if (this.tick % 20 === 0) {
+                    for (const e of enemies) {
+                        if (!e.markedForDeletion && dist(this.x, this.y, e.x, e.y) < this.radius + e.radius) {
+                            damageEnemy(e, 1, null, true);
+                        }
+                    }
+                }
+            }
+            draw(ctx) {
+                ctx.save();
+                ctx.globalAlpha = 0.35;
+                ctx.fillStyle = '#6ab04c';
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.globalAlpha = 1;
+                ctx.strokeStyle = '#2f3640';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+                ctx.stroke();
+                ctx.restore();
+            }
+        }
+
+        // Player
+        const player = {
+            x: 0, y: 0,
+            body: null,
+            speed: 5,
+            hp: 100,
+            maxHp: 100,
+            level: 1,
+            exp: 0,
+            expToNext: 100,
+            pendingLevelUps: 0,
+            kpi: 0, // Score
+            magnetRange: 100,
+            regen: 0,
+            weapons: {
+                keyboard: { level: 1, timer: 0, cooldown: 15 },
+                printer: { level: 0, timer: 0, cooldown: 80 },
+                coffee: { level: 0, timer: 0, cooldown: 180 }
+            },
+
+            init() {
+                this.x = 0;
+                this.y = 0;
+                this.body = new JellyBody(this.x, this.y, 25, '#0fbcf9', 10);
+                this.hp = 100;
+                this.maxHp = 100;
+                this.speed = 5;
+                this.kpi = 0;
+                this.level = 1;
+                this.exp = 0;
+                this.expToNext = 100;
+                this.pendingLevelUps = 0;
+                this.magnetRange = 100;
+                this.regen = 0;
+                // Reset weapons
+                this.weapons.keyboard.level = 1;
+                this.weapons.printer.level = 0;
+                this.weapons.coffee.level = 0;
+                this.weapons.keyboard.cooldown = 15;
+                this.weapons.printer.cooldown = 80;
+                this.weapons.coffee.cooldown = 180;
+            },
+
+            update() {
+                let dx = 0;
+                let dy = 0;
+
+                // Keyboard Input
+                if (keys['w'] || keys['ArrowUp']) dy = -1;
+                if (keys['s'] || keys['ArrowDown']) dy = 1;
+                if (keys['a'] || keys['ArrowLeft']) dx = -1;
+                if (keys['d'] || keys['ArrowRight']) dx = 1;
+
+                // Touch Input
+                if (joystick.active) {
+                    const len = Math.hypot(joystick.dx, joystick.dy);
+                    if (len > 10) {
+                        dx = joystick.dx / len;
+                        dy = joystick.dy / len;
+                    }
+                }
+
+                // Normalize
+                if (dx !== 0 || dy !== 0) {
+                    const len = Math.hypot(dx, dy);
+                    dx /= len;
+                    dy /= len;
+                    this.x += dx * this.speed;
+                    this.y += dy * this.speed;
+
+                    // Wobble
+                    this.body.deform(dx, dy, 1);
+                }
+
+                // Sync visual body
+                this.body.x = this.x;
+                this.body.y = this.y;
+                this.body.update();
+
+                updateCamera();
+
+                // Auto Attack
+                this.handleWeapons();
+
+                // Regen
+                if (this.regen > 0 && this.hp < this.maxHp) {
+                    this.hp = Math.min(this.maxHp, this.hp + this.regen / 60);
+                }
+            },
+
+            handleWeapons() {
+                // Find nearest enemy
+                let target = null;
+                let minDist = 500; // range
+
+                for (const e of enemies) {
+                    const d = dist(this.x, this.y, e.x, e.y);
+                    if (d < minDist) {
+                        minDist = d;
+                        target = e;
+                    }
+                }
+
+                // Weapon: Keyboard (Basic Shooter)
+                const kb = this.weapons.keyboard;
+                if (kb.level > 0) {
+                    kb.timer++;
+                    if (kb.timer >= kb.cooldown) {
+                        kb.timer = 0;
+                        let tx = target ? target.x : this.x + rand(-120, 120);
+                        let ty = target ? target.y : this.y + rand(-120, 120);
+                        if (!target && (mouse.x !== this.x)) {
+                            const worldMouse = screenToWorld(mouse.x, mouse.y);
+                            tx = worldMouse.x;
+                            ty = worldMouse.y;
+                        }
+
+                        projectiles.push(new Projectile(this.x, this.y, tx, ty, 'keyboard'));
+                        AudioSys.playSound('shoot');
+
+                        if (kb.level >= 2) {
+                            // Multishot
+                            setTimeout(() => projectiles.push(new Projectile(this.x, this.y, tx + 20, ty + 20, 'keyboard')), 80);
+                        }
+                        if (kb.level >= 3) {
+                            setTimeout(() => projectiles.push(new Projectile(this.x, this.y, tx - 20, ty - 10, 'keyboard')), 120);
+                        }
+                    }
+                }
+
+                // Weapon: Printer (AOE Storm)
+                const pr = this.weapons.printer;
+                if (pr.level > 0) {
+                    pr.timer++;
+                    if (pr.timer >= pr.cooldown) {
+                        pr.timer = 0;
+                        const count = pr.level === 1 ? 8 : pr.level === 2 ? 12 : 16;
+                        for (let i = 0; i < count; i++) {
+                            const angle = (Math.PI * 2 / count) * i;
+                            const tx = this.x + Math.cos(angle) * 100;
+                            const ty = this.y + Math.sin(angle) * 100;
+                            projectiles.push(new Projectile(this.x, this.y, tx, ty, 'paper'));
+                        }
+                        AudioSys.playSound('paper');
+                    }
+                }
+
+                // Weapon: Coffee (Slow + DOT)
+                const cf = this.weapons.coffee;
+                if (cf.level > 0) {
+                    cf.timer++;
+                    if (cf.timer >= cf.cooldown) {
+                        cf.timer = 0;
+                        coffeeZones.push(new CoffeeZone(this.x, this.y, cf.level));
+                        AudioSys.playSound('paper');
+                    }
+                }
+            },
+
+            draw(ctx) {
+                this.body.draw(ctx);
+                // Face (Glasses & Tie)
+                ctx.fillStyle = '#000';
+                // Glasses
+                ctx.fillRect(this.x - 12, this.y - 5, 8, 4);
+                ctx.fillRect(this.x + 4, this.y - 5, 8, 4);
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.moveTo(this.x - 4, this.y - 3);
+                ctx.lineTo(this.x + 4, this.y - 3);
+                ctx.stroke();
+                // Tie
+                ctx.fillStyle = '#ff4757';
+                ctx.beginPath();
+                ctx.moveTo(this.x, this.y + 5);
+                ctx.lineTo(this.x - 4, this.y + 20);
+                ctx.lineTo(this.x + 4, this.y + 20);
+                ctx.fill();
+            }
+        };
+
+        // Enemies
+        const enemies = [];
+        class Enemy {
+            constructor(type) {
+                const spawnDistance = Math.max(screenWidth, screenHeight) * 0.8 + 120;
+                const spawnAngle = rand(0, Math.PI * 2);
+                this.x = player.x + Math.cos(spawnAngle) * spawnDistance;
+                this.y = player.y + Math.sin(spawnAngle) * spawnDistance;
+
+                this.type = type;
+                this.markedForDeletion = false;
+
+                if (type === 'colleague') {
+                    this.speed = rand(1, 2);
+                    this.hp = 3;
+                    this.radius = 20;
+                    this.color = '#bdc3c7'; // Grey
+                    this.score = 10;
+                } else if (type === 'manager') {
+                    this.speed = 2.5;
+                    this.hp = 8;
+                    this.radius = 25;
+                    this.color = '#e056fd'; // Purple
+                    this.score = 30;
+                } else if (type === 'boss') {
+                    // Boss Logic override
+                    this.x = player.x;
+                    this.y = player.y - (screenHeight / 2 + 200);
+                    this.speed = 1;
+                    this.hp = 500;
+                    this.radius = 60;
+                    this.color = '#2ecc71'; // Green
+                    this.score = 1000;
+                    this.state = 'enter';
+                    this.timer = 0;
+                }
+
+                this.body = new JellyBody(this.x, this.y, this.radius, this.color, type === 'boss' ? 16 : 8);
+            }
+
+            update() {
+                // AI
+                if (this.type === 'boss') {
+                    this.updateBoss();
+                } else {
+                    const angle = Math.atan2(player.y - this.y, player.x - this.x);
+                    let slowFactor = 1;
+                    for (const zone of coffeeZones) {
+                        if (dist(this.x, this.y, zone.x, zone.y) < zone.radius + this.radius) {
+                            slowFactor = Math.min(slowFactor, zone.slow);
+                        }
+                    }
+                    const moveSpeed = this.speed * slowFactor;
+                    this.vx = Math.cos(angle) * moveSpeed;
+                    this.vy = Math.sin(angle) * moveSpeed;
+                    this.x += this.vx;
+                    this.y += this.vy;
+                }
+
+                // Push apart
+                for (const other of enemies) {
+                    if (other === this) continue;
+                    const d = dist(this.x, this.y, other.x, other.y);
+                    const minDist = this.radius + other.radius;
+                    if (d < minDist) {
+                        const pushAngle = Math.atan2(this.y - other.y, this.x - other.x);
+                        const pushForce = 0.5;
+                        this.x += Math.cos(pushAngle) * pushForce;
+                        this.y += Math.sin(pushAngle) * pushForce;
+                    }
+                }
+
+                // Jelly Update
+                this.body.x = this.x;
+                this.body.y = this.y;
+                this.body.update();
+                if (this.vx || this.vy) {
+                    const vLen = Math.hypot(this.vx, this.vy) || 1;
+                    this.body.deform(this.vx / vLen, this.vy / vLen, 0.5);
+                }
+            }
+
+            updateBoss() {
+                this.timer++;
+                const anchorX = player.x;
+                const anchorY = player.y - screenHeight * 0.35;
+
+                if (this.state === 'enter') {
+                    this.x = lerp(this.x, anchorX, 0.05);
+                    this.y = lerp(this.y, anchorY, 0.05);
+                    if (dist(this.x, this.y, anchorX, anchorY) < 10) this.state = 'idle';
+                } else if (this.state === 'idle') {
+                    // Hover
+                    this.x = anchorX + Math.sin(this.timer * 0.02) * 100;
+                    this.y = lerp(this.y, anchorY, 0.05);
+
+                    // Attack 1: PPT Laser
+                    if (this.timer % 180 === 0) {
+                        this.state = 'laser';
+                        AudioSys.playSound('laser');
+                        gameData.freeze = 5;
+                    }
+                    // Attack 2: Excel Drop
+                    if (this.timer % 300 === 0) {
+                        // Summon Excel falling blocks
+                        AudioSys.playSound('excel');
+                        // Creating dummy projectiles for visual
+                        for (let i = 0; i < 5; i++) {
+                            const px = rand(player.x - screenWidth / 2, player.x + screenWidth / 2);
+                            projectiles.push({
+                                x: px,
+                                y: player.y - screenHeight / 2 - 60,
+                                vx: 0,
+                                vy: 5,
+                                type: 'excel',
+                                life: 100, radius: 20,
+                                draw: function (ctx) {
+                                    ctx.fillStyle = '#27ae60';
+                                    ctx.fillRect(this.x, this.y, 40, 30);
+                                    ctx.fillStyle = '#fff';
+                                    ctx.fillText('XLS', this.x + 10, this.y + 20);
+                                },
+                                update: function () { this.y += this.vy; this.life--; }
+                            });
+                        }
+                    }
+                } else if (this.state === 'laser') {
+                    if (this.timer % 20 === 0) {
+                        const angle = Math.atan2(player.y - this.y, player.x - this.x);
+                        projectiles.push(new Projectile(this.x, this.y, player.x, player.y, 'enemy_hr'));
+                    }
+                    if (this.timer % 180 === 60) this.state = 'idle';
+                }
+            }
+
+            draw(ctx) {
+                this.body.draw(ctx);
+
+                // Eyes
+                ctx.fillStyle = '#fff';
+                ctx.beginPath();
+                if (this.type === 'boss') {
+                    ctx.arc(this.x - 15, this.y - 10, 10, 0, Math.PI * 2);
+                    ctx.arc(this.x + 15, this.y - 10, 10, 0, Math.PI * 2);
+                } else {
+                    ctx.arc(this.x - 6, this.y - 4, 5, 0, Math.PI * 2);
+                    ctx.arc(this.x + 6, this.y - 4, 5, 0, Math.PI * 2);
+                }
+                ctx.fill();
+
+                ctx.fillStyle = '#000';
+                ctx.beginPath();
+                if (this.type === 'boss') {
+                    ctx.arc(this.x - 15, this.y - 10, 3, 0, Math.PI * 2);
+                    ctx.arc(this.x + 15, this.y - 10, 3, 0, Math.PI * 2);
+                } else {
+                    ctx.arc(this.x - 6, this.y - 4, 2, 0, Math.PI * 2);
+                    ctx.arc(this.x + 6, this.y - 4, 2, 0, Math.PI * 2);
+                }
+                ctx.fill();
+
+                // HP Bar for Boss
+                if (this.type === 'boss') {
+                    ctx.fillStyle = 'red';
+                    ctx.fillRect(this.x - 50, this.y - 80, 100, 10);
+                    ctx.fillStyle = 'lime';
+                    ctx.fillRect(this.x - 50, this.y - 80, 100 * (this.hp / 500), 10);
+                }
+            }
+        }
+
+        /**
+         * MAIN GAME LOOP
+         */
+
+        const gameData = {
+            state: 'start', // start, playing, levelup, gameover
+            shake: 0,
+            freeze: 0,
+            waveTimer: 0,
+            difficulty: 1
+        };
+
+        const upgradeLevels = {};
+        const upgradePool = [
+            {
+                id: 'keyboard_level',
+                name: '机械键盘',
+                desc: '键盘等级 +1（增加多重射击）',
+                canApply: () => player.weapons.keyboard.level < 3,
+                apply: () => { player.weapons.keyboard.level += 1; }
+            },
+            {
+                id: 'keyboard_rate',
+                name: '狂敲加速',
+                desc: '键盘冷却 -15%',
+                canApply: () => (upgradeLevels.keyboard_rate || 0) < 5,
+                apply: () => {
+                    upgradeLevels.keyboard_rate = (upgradeLevels.keyboard_rate || 0) + 1;
+                    player.weapons.keyboard.cooldown = Math.max(5, Math.floor(player.weapons.keyboard.cooldown * 0.85));
+                }
+            },
+            {
+                id: 'printer_level',
+                name: '打印机风暴',
+                desc: '解锁/升级打印机（纸片更多）',
+                canApply: () => player.weapons.printer.level < 3,
+                apply: () => { player.weapons.printer.level += 1; }
+            },
+            {
+                id: 'printer_rate',
+                name: '超频打印',
+                desc: '打印机冷却 -20%',
+                canApply: () => (upgradeLevels.printer_rate || 0) < 4 && player.weapons.printer.level > 0,
+                apply: () => {
+                    upgradeLevels.printer_rate = (upgradeLevels.printer_rate || 0) + 1;
+                    player.weapons.printer.cooldown = Math.max(25, Math.floor(player.weapons.printer.cooldown * 0.8));
+                }
+            },
+            {
+                id: 'coffee_level',
+                name: '咖啡泼洒',
+                desc: '解锁/升级咖啡杯（减速+持续伤害）',
+                canApply: () => player.weapons.coffee.level < 3,
+                apply: () => { player.weapons.coffee.level += 1; }
+            },
+            {
+                id: 'coffee_rate',
+                name: '浓缩续杯',
+                desc: '咖啡冷却 -20%',
+                canApply: () => (upgradeLevels.coffee_rate || 0) < 4 && player.weapons.coffee.level > 0,
+                apply: () => {
+                    upgradeLevels.coffee_rate = (upgradeLevels.coffee_rate || 0) + 1;
+                    player.weapons.coffee.cooldown = Math.max(60, Math.floor(player.weapons.coffee.cooldown * 0.8));
+                }
+            },
+            {
+                id: 'move_speed',
+                name: '加班脚力',
+                desc: '移动速度 +0.6',
+                canApply: () => (upgradeLevels.move_speed || 0) < 5,
+                apply: () => {
+                    upgradeLevels.move_speed = (upgradeLevels.move_speed || 0) + 1;
+                    player.speed += 0.6;
+                }
+            },
+            {
+                id: 'max_hp',
+                name: '抗压训练',
+                desc: '最大精力 +15',
+                canApply: () => (upgradeLevels.max_hp || 0) < 5,
+                apply: () => {
+                    upgradeLevels.max_hp = (upgradeLevels.max_hp || 0) + 1;
+                    player.maxHp += 15;
+                    player.hp = Math.min(player.maxHp, player.hp + 15);
+                }
+            },
+            {
+                id: 'magnet',
+                name: '绩效磁铁',
+                desc: '拾取范围 +25',
+                canApply: () => (upgradeLevels.magnet || 0) < 5,
+                apply: () => {
+                    upgradeLevels.magnet = (upgradeLevels.magnet || 0) + 1;
+                    player.magnetRange += 25;
+                }
+            },
+            {
+                id: 'regen',
+                name: '摸鱼恢复',
+                desc: '每秒恢复精力 +0.5',
+                canApply: () => (upgradeLevels.regen || 0) < 6,
+                apply: () => {
+                    upgradeLevels.regen = (upgradeLevels.regen || 0) + 1;
+                    player.regen += 0.5;
+                }
+            }
+        ];
+
+        let currentUpgradeOptions = [];
+
+        function getUpgradeOptions(count) {
+            const pool = upgradePool.filter(option => option.canApply());
+            for (let i = pool.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [pool[i], pool[j]] = [pool[j], pool[i]];
+            }
+            return pool.slice(0, Math.min(count, pool.length));
+        }
+
+        function addExperience(amount) {
+            player.exp += amount;
+            while (player.exp >= player.expToNext) {
+                player.exp -= player.expToNext;
+                player.expToNext = Math.floor(player.expToNext * 1.25 + 20);
+                player.pendingLevelUps++;
+                player.level++;
+            }
+            if (player.pendingLevelUps > 0 && gameData.state === 'playing') {
+                showLevelUp();
+            }
+        }
+
+        function showLevelUp() {
+            gameData.state = 'levelup';
+            levelUpOverlay.classList.remove('hidden');
+            upgradeOptions.innerHTML = '';
+            currentUpgradeOptions = getUpgradeOptions(3);
+            if (currentUpgradeOptions.length === 0) {
+                player.hp = player.maxHp;
+                player.pendingLevelUps--;
+                levelUpOverlay.classList.add('hidden');
+                gameData.state = 'playing';
+                return;
+            }
+            currentUpgradeOptions.forEach((option, index) => {
+                const btn = document.createElement('button');
+                btn.className = 'upgrade-card';
+                btn.innerHTML = `<div class="upgrade-title">${option.name}</div><div class="upgrade-desc">${option.desc}</div>`;
+                btn.addEventListener('click', () => chooseUpgrade(index));
+                upgradeOptions.appendChild(btn);
+            });
+        }
+
+        function chooseUpgrade(index) {
+            const option = currentUpgradeOptions[index];
+            if (!option) return;
+            option.apply();
+            levelUpOverlay.classList.add('hidden');
+            player.pendingLevelUps--;
+            if (player.pendingLevelUps > 0) {
+                showLevelUp();
+                return;
+            }
+            gameData.state = 'playing';
+        }
+
+        function defeatEnemy(e) {
+            if (e.markedForDeletion) return;
+            e.markedForDeletion = true;
+            drops.push(new Drop(e.x, e.y));
+            player.kpi += e.score;
+            addExperience(e.score);
+            spawnParticles(e.x, e.y, '#fff', 15);
+        }
+
+        function damageEnemy(e, amount, angle, silent = false) {
+            if (e.markedForDeletion) return;
+            e.hp -= amount;
+            if (angle !== null && angle !== undefined) {
+                e.body.hit(angle, 5);
+            }
+            if (!silent) {
+                spawnParticles(e.x, e.y, e.color, 5);
+                AudioSys.playSound('hit');
+                gameData.shake = Math.max(gameData.shake, 3);
+            }
+            if (e.hp <= 0) {
+                defeatEnemy(e);
+            }
+        }
+
+        function checkCollisions() {
+            // Projectiles vs Enemies
+            for (let i = projectiles.length - 1; i >= 0; i--) {
+                const p = projectiles[i];
+
+                // Enemy Hit
+                for (let j = enemies.length - 1; j >= 0; j--) {
+                    const e = enemies[j];
+                    if (dist(p.x, p.y, e.x, e.y) < e.radius + p.radius) {
+                        // Hit!
+                        damageEnemy(e, 1, Math.atan2(p.vy, p.vx));
+
+                        if (p.type !== 'paper') { // Paper penetrates
+                            projectiles.splice(i, 1);
+                        }
+                        break;
+                    }
+                }
+            }
+
+            // Player vs Drops
+            for (let i = drops.length - 1; i >= 0; i--) {
+                const d = drops[i];
+                const distToPlayer = dist(d.x, d.y, player.x, player.y);
+
+                // Magnet
+                if (distToPlayer < player.magnetRange) {
+                    d.x += (player.x - d.x) * 0.1;
+                    d.y += (player.y - d.y) * 0.1;
+                }
+
+                if (distToPlayer < player.body.radius + 10) {
+                    drops.splice(i, 1);
+                    player.kpi += 10;
+                    addExperience(10);
+                    AudioSys.playSound('coin');
+                    // Heal small amount
+                    player.hp = Math.min(player.maxHp, player.hp + 2);
+                }
+            }
+
+            // Enemies vs Player
+            let hitPlayer = false;
+            for (const e of enemies) {
+                if (dist(e.x, e.y, player.x, player.y) < e.radius + player.body.radius) {
+                    hitPlayer = true;
+                    // Pushback
+                    const angle = Math.atan2(player.y - e.y, player.x - e.x);
+                    player.x += Math.cos(angle) * 5;
+                    player.y += Math.sin(angle) * 5;
+                }
+            }
+
+            // Projectiles (Enemy) vs Player
+            // For boss projectiles mostly
+            for (let i = projectiles.length - 1; i >= 0; i--) {
+                const p = projectiles[i];
+                if (p.type === 'enemy_hr' || p.type === 'excel') {
+                    if (dist(p.x, p.y, player.x, player.y) < p.radius + player.body.radius) {
+                        hitPlayer = true;
+                        projectiles.splice(i, 1);
+                    }
+                }
+            }
+
+            if (hitPlayer) {
+                player.hp -= 1;
+                gameData.shake = 5;
+                player.body.hit(rand(0, 6), 5);
+                if (player.hp <= 0) {
+                    gameOver();
+                }
+            }
+        }
+
+        function spawnWave() {
+            gameData.waveTimer++;
+
+            const spawnRate = Math.max(20, 100 - Math.floor(gameData.waveTimer / 60)); // Increases over time
+
+            if (gameData.waveTimer % spawnRate === 0) {
+                const type = Math.random() > 0.8 ? 'manager' : 'colleague';
+                enemies.push(new Enemy(type));
+            }
+
+            // Boss Spawn
+            if (gameData.waveTimer === 1800) { // 30 seconds approx
+                enemies.push(new Enemy('boss'));
+                // Clear small enemies
+                // enemies.forEach(e => { if (e.type !== 'boss') e.hp = 0; });
+            }
+        }
+
+        function update() {
+            if (gameData.state !== 'playing') return;
+
+            if (gameData.freeze > 0) {
+                gameData.freeze--;
+                return;
+            }
+
+            player.update();
+            spawnWave();
+
+            // Updates
+            projectiles.forEach((p, i) => {
+                p.update();
+                const outRange = dist(p.x, p.y, player.x, player.y) > Math.max(screenWidth, screenHeight) * 1.5 + 300;
+                if (p.life <= 0 || outRange) {
+                    projectiles.splice(i, 1);
+                }
+            });
+
+            enemies.forEach(e => e.update());
+            drops.forEach(d => d.update());
+            for (let i = coffeeZones.length - 1; i >= 0; i--) {
+                coffeeZones[i].update();
+                if (coffeeZones[i].life <= 0) coffeeZones.splice(i, 1);
+            }
+            particles.forEach((p, i) => {
+                p.update();
+                if (p.life <= 0) particles.splice(i, 1);
+            });
+
+            // Cleanup dead enemies
+            for (let i = enemies.length - 1; i >= 0; i--) {
+                if (enemies[i].markedForDeletion) enemies.splice(i, 1);
+            }
+
+            for (let i = drops.length - 1; i >= 0; i--) {
+                const d = drops[i];
+                if (dist(d.x, d.y, player.x, player.y) > Math.max(screenWidth, screenHeight) * 2.2) {
+                    drops.splice(i, 1);
+                }
+            }
+
+            checkCollisions();
+
+            // HUD
+            document.getElementById('score-display').innerText = `KPI: ${player.kpi}`;
+            document.getElementById('level-display').innerText = `等级: ${player.level} (${Math.floor(player.exp)}/${player.expToNext})`;
+            document.getElementById('hp-display').innerText = `精力值: ${Math.floor(player.hp)}/${player.maxHp}`;
+        }
+
+        function draw() {
+            // Clear with office background color
+            ctx.fillStyle = '#f0f4f8';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Grid lines (Office floor tiles) - infinite loop
+            const tileSize = 100;
+            const offsetX = ((-camera.x) % tileSize + tileSize) % tileSize;
+            const offsetY = ((-camera.y) % tileSize + tileSize) % tileSize;
+            ctx.strokeStyle = '#dcdde1';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            for (let x = offsetX; x < screenWidth; x += tileSize) { ctx.moveTo(x, 0); ctx.lineTo(x, screenHeight); }
+            for (let y = offsetY; y < screenHeight; y += tileSize) { ctx.moveTo(0, y); ctx.lineTo(screenWidth, y); }
+            ctx.stroke();
+
+            ctx.save();
+
+            // Screen Shake
+            let shakeX = 0;
+            let shakeY = 0;
+            if (gameData.shake > 0) {
+                shakeX = rand(-gameData.shake, gameData.shake);
+                shakeY = rand(-gameData.shake, gameData.shake);
+                gameData.shake *= 0.9;
+                if (gameData.shake < 0.5) gameData.shake = 0;
+            }
+
+            ctx.translate(-camera.x + shakeX, -camera.y + shakeY);
+
+            // Draw Shadows
+            ctx.fillStyle = 'rgba(0,0,0,0.1)';
+            for (const e of enemies) {
+                ctx.beginPath(); ctx.ellipse(e.x, e.y + e.radius, e.radius, e.radius * 0.3, 0, 0, Math.PI * 2); ctx.fill();
+            }
+            ctx.beginPath(); ctx.ellipse(player.x, player.y + 25, 25, 8, 0, 0, Math.PI * 2); ctx.fill();
+
+            // Draw Objects
+            drops.forEach(d => d.draw(ctx));
+            projectiles.forEach(p => p.draw(ctx));
+            coffeeZones.forEach(z => z.draw(ctx));
+            enemies.forEach(e => e.draw(ctx));
+            if (player.body) player.draw(ctx);
+            particles.forEach(p => p.draw(ctx));
+
+            ctx.restore();
+        }
+
+        function loop() {
+            requestAnimationFrame(loop);
+            update();
+            draw();
+        }
+
+        // Game Flow Control
+        const startOverlay = document.getElementById('start-overlay');
+        const gameOverOverlay = document.getElementById('game-over-overlay');
+        const levelUpOverlay = document.getElementById('level-up-overlay');
+        const upgradeOptions = document.getElementById('upgrade-options');
+        const startBtn = document.getElementById('start-btn');
+        const restartBtn = document.getElementById('restart-btn');
+
+        function startGame() {
+            AudioSys.init();
+            startOverlay.classList.add('hidden');
+            gameOverOverlay.classList.add('hidden');
+            levelUpOverlay.classList.add('hidden');
+            gameData.state = 'playing';
+            gameData.waveTimer = 0;
+            gameData.shake = 0;
+            gameData.freeze = 0;
+            projectiles.length = 0;
+            enemies.length = 0;
+            drops.length = 0;
+            particles.length = 0;
+            coffeeZones.length = 0;
+            for (const key in upgradeLevels) delete upgradeLevels[key];
+            player.init();
+            updateCamera();
+        }
+
+        function gameOver() {
+            gameData.state = 'gameover';
+            document.getElementById('final-score').innerText = `KPI 达成率: ${player.kpi}`;
+            levelUpOverlay.classList.add('hidden');
+            gameOverOverlay.classList.remove('hidden');
+        }
+
+        startBtn.addEventListener('click', startGame);
+        restartBtn.addEventListener('click', startGame);
+
+        document.addEventListener('keydown', (e) => {
+            if (gameData.state !== 'levelup') return;
+            const index = parseInt(e.key, 10) - 1;
+            if (index >= 0 && index < 3) {
+                chooseUpgrade(index);
+            }
+        });
+
+        // Init Loop
+        loop();
+
+    </script>
+</body>
+
+</html>
