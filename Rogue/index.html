@@ -843,6 +843,8 @@
             damageMultiplier: 1,
             projectileSpeed: 1,
             projectileSize: 1,
+            keyboardExtraShots: 0,
+            printerExtraCount: 0,
             critChance: 0,
             critMultiplier: 2,
             keyboardPierce: 0,
@@ -878,6 +880,8 @@
                 this.damageMultiplier = 1;
                 this.projectileSpeed = 1;
                 this.projectileSize = 1;
+                this.keyboardExtraShots = 0;
+                this.printerExtraCount = 0;
                 this.critChance = 0;
                 this.critMultiplier = 2;
                 this.keyboardPierce = 0;
@@ -978,6 +982,20 @@
                         projectiles.push(new Projectile(this.x, this.y, tx, ty, 'keyboard'));
                         AudioSys.playSound('shoot');
 
+                        if (this.keyboardExtraShots > 0) {
+                            const baseAngle = Math.atan2(ty - this.y, tx - this.x);
+                            const spread = Math.PI / 14;
+                            const dist = 160;
+                            for (let i = 1; i <= this.keyboardExtraShots; i++) {
+                                const dir = (i % 2 === 1) ? 1 : -1;
+                                const step = Math.ceil(i / 2);
+                                const angle = baseAngle + dir * step * spread;
+                                const sx = this.x + Math.cos(angle) * dist;
+                                const sy = this.y + Math.sin(angle) * dist;
+                                projectiles.push(new Projectile(this.x, this.y, sx, sy, 'keyboard'));
+                            }
+                        }
+
                         if (kb.level >= 2) {
                             // Multishot
                             setTimeout(() => projectiles.push(new Projectile(this.x, this.y, tx + 20, ty + 20, 'keyboard')), 80);
@@ -994,7 +1012,8 @@
                     pr.timer++;
                     if (pr.timer >= pr.cooldown) {
                         pr.timer = 0;
-                        const count = pr.level === 1 ? 8 : pr.level === 2 ? 12 : 16;
+                        let count = pr.level === 1 ? 8 : pr.level === 2 ? 12 : 16;
+                        count += this.printerExtraCount;
                         for (let i = 0; i < count; i++) {
                             const angle = (Math.PI * 2 / count) * i;
                             const tx = this.x + Math.cos(angle) * 100;
@@ -1096,6 +1115,14 @@
             }
             return count;
         }
+        function getEnemyPower() {
+            const seconds = gameData.waveTimer / 60;
+            const power = Math.min(4.5, 1 + seconds * 0.012);
+            const hpPower = Math.min(7, 1 + seconds * 0.02);
+            const minionPower = Math.min(3, 1 + seconds * 0.006);
+            const minionHpPower = Math.min(4.5, 1 + seconds * 0.01);
+            return { power, hpPower, minionPower, minionHpPower };
+        }
         const eliteNamePool = [
             '摸鱼王中王·精英',
             '领导画饼师·精英',
@@ -1127,32 +1154,44 @@
                 this.markedForDeletion = false;
                 this.chairHitCooldown = 0;
                 this.name = '';
+                const powerData = getEnemyPower();
+                this.power = powerData.power;
+                this.hpPower = powerData.hpPower;
+                const speedScale = 1 + (this.power - 1) * 0.5;
 
                 if (type === 'colleague') {
-                    this.speed = rand(1, 2);
-                    this.hp = 3;
+                    const minionSpeedScale = 1 + (powerData.minionPower - 1) * 0.5;
+                    this.speed = rand(1, 2) * minionSpeedScale;
+                    this.hp = Math.ceil(3 * powerData.minionHpPower);
+                    this.maxHp = this.hp;
                     this.radius = 20;
                     this.color = '#bdc3c7'; // Grey
                     this.score = 10;
+                    this.contactDamage = Math.max(1, Math.round(2 * powerData.minionPower));
                     this.name = '';
                 } else if (type === 'manager') {
-                    this.speed = 2.5;
-                    this.hp = 8;
+                    this.speed = 2.5 * speedScale;
+                    this.hp = Math.ceil(8 * this.hpPower);
+                    this.maxHp = this.hp;
                     this.radius = 25;
                     this.color = '#e056fd'; // Purple
-                    this.score = 30;
+                    this.score = 80;
+                    this.contactDamage = Math.max(2, Math.round(3 * this.power));
                     this.name = pickName(eliteNamePool);
                 } else if (type === 'boss') {
                     // Boss Logic override
                     this.x = player.x;
                     this.y = player.y - (screenHeight / 2 + 200);
-                    this.speed = 1;
-                    this.hp = 500;
+                    this.speed = 1 * (1 + (this.power - 1) * 0.35);
+                    this.hp = Math.min(2200, Math.ceil(500 * this.hpPower));
+                    this.maxHp = this.hp;
                     this.radius = 60;
                     this.color = '#2ecc71'; // Green
-                    this.score = 1000;
+                    this.score = 2000;
                     this.state = 'enter';
                     this.timer = 0;
+                    this.contactDamage = Math.max(4, Math.round(5 * this.power));
+                    this.projectileDamage = Math.max(2, Math.round(2 * this.power));
                     this.name = pickName(bossNamePool);
                 }
 
@@ -1208,16 +1247,18 @@
             updateBoss() {
                 this.timer++;
                 const anchorX = player.x;
-                const anchorY = player.y - screenHeight * 0.35;
+                const anchorY = player.y;
+                const followX = anchorX + Math.sin(this.timer * 0.02) * 60;
+                const followY = anchorY + Math.cos(this.timer * 0.017) * 40;
 
                 if (this.state === 'enter') {
-                    this.x = lerp(this.x, anchorX, 0.05);
-                    this.y = lerp(this.y, anchorY, 0.05);
-                    if (dist(this.x, this.y, anchorX, anchorY) < 10) this.state = 'idle';
+                    this.x = lerp(this.x, followX, 0.06);
+                    this.y = lerp(this.y, followY, 0.06);
+                    if (dist(this.x, this.y, anchorX, anchorY) < 90) this.state = 'idle';
                 } else if (this.state === 'idle') {
-                    // Hover
-                    this.x = anchorX + Math.sin(this.timer * 0.02) * 100;
-                    this.y = lerp(this.y, anchorY, 0.05);
+                    // Follow with slight orbit
+                    this.x = lerp(this.x, followX, 0.03);
+                    this.y = lerp(this.y, followY, 0.03);
 
                     // Attack 1: PPT Laser
                     if (this.timer % 180 === 0) {
@@ -1251,12 +1292,15 @@
                         }
                     }
                 } else if (this.state === 'laser') {
+                    // Keep following while firing
+                    this.x = lerp(this.x, followX, 0.02);
+                    this.y = lerp(this.y, followY, 0.02);
                     if (this.timer % 20 === 0) {
                         const angle = Math.atan2(player.y - this.y, player.x - this.x);
                         projectiles.push(new Projectile(this.x, this.y, player.x, player.y, 'enemy_hr', {
                             owner: 'enemy',
                             speed: 6,
-                            damage: 1,
+                            damage: this.projectileDamage || 2,
                             size: 1
                         }));
                     }
@@ -1309,10 +1353,11 @@
                 if (this.type === 'boss') {
                     const barOffset = this.radius + 20;
                     const barY = this.y - barOffset;
+                    const hpRatio = this.maxHp ? Math.max(0, Math.min(1, this.hp / this.maxHp)) : 1;
                     ctx.fillStyle = 'red';
                     ctx.fillRect(this.x - 50, barY, 100, 10);
                     ctx.fillStyle = 'lime';
-                    ctx.fillRect(this.x - 50, barY, 100 * (this.hp / 500), 10);
+                    ctx.fillRect(this.x - 50, barY, 100 * hpRatio, 10);
                 }
             }
         }
@@ -1349,6 +1394,16 @@
                 }
             },
             {
+                id: 'keyboard_extra',
+                name: '并行敲击',
+                desc: '键盘额外子弹 +1',
+                canApply: () => (upgradeLevels.keyboard_extra || 0) < 4,
+                apply: () => {
+                    upgradeLevels.keyboard_extra = (upgradeLevels.keyboard_extra || 0) + 1;
+                    player.keyboardExtraShots += 1;
+                }
+            },
+            {
                 id: 'printer_level',
                 name: '打印机风暴',
                 desc: '解锁/升级打印机（纸片更多）',
@@ -1363,6 +1418,16 @@
                 apply: () => {
                     upgradeLevels.printer_rate = (upgradeLevels.printer_rate || 0) + 1;
                     player.weapons.printer.cooldown = Math.max(25, Math.floor(player.weapons.printer.cooldown * 0.8));
+                }
+            },
+            {
+                id: 'printer_extra',
+                name: '加纸托盘',
+                desc: '打印机纸片 +4',
+                canApply: () => (upgradeLevels.printer_extra || 0) < 5 && player.weapons.printer.level > 0,
+                apply: () => {
+                    upgradeLevels.printer_extra = (upgradeLevels.printer_extra || 0) + 1;
+                    player.printerExtraCount += 4;
                 }
             },
             {
@@ -1710,9 +1775,14 @@
 
             // Enemies vs Player
             let hitPlayer = false;
+            let damageTaken = 0;
             for (const e of enemies) {
                 if (dist(e.x, e.y, player.x, player.y) < e.radius + player.body.radius) {
                     hitPlayer = true;
+                    const contactDamage = e.contactDamage !== undefined
+                        ? e.contactDamage
+                        : (e.type === 'boss' ? 5 : e.type === 'manager' ? 3 : 2);
+                    damageTaken = Math.max(damageTaken, contactDamage);
                     // Pushback
                     const angle = Math.atan2(player.y - e.y, player.x - e.x);
                     player.x += Math.cos(angle) * 5;
@@ -1727,13 +1797,14 @@
                 if (p.owner === 'enemy') {
                     if (dist(p.x, p.y, player.x, player.y) < p.radius + player.body.radius) {
                         hitPlayer = true;
+                        damageTaken = Math.max(damageTaken, p.damage || 2);
                         projectiles.splice(i, 1);
                     }
                 }
             }
 
             if (hitPlayer) {
-                player.hp -= 1;
+                player.hp -= damageTaken;
                 gameData.shake = 5;
                 player.body.hit(rand(0, 6), 5);
                 if (player.hp <= 0) {
@@ -1763,7 +1834,7 @@
             }
 
             // Boss Spawn
-            if (gameData.waveTimer === 1800) { // 30 seconds approx
+            if (gameData.waveTimer === 5400 || gameData.waveTimer === 14400) { // 90s, 240s
                 if (countEnemiesByType('boss') < 1) {
                     enemies.push(new Enemy('boss'));
                 }
