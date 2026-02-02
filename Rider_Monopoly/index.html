@@ -1,0 +1,1083 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>假面骑士：变身大富翁</title>
+    <style>
+        :root {
+            --bg-deep: #0b0c16;
+            --bg-mid: #1b1f3b;
+            --bg-light: #2b2f55;
+            --accent: #ffcc3d;
+            --accent-strong: #ff6b6b;
+            --accent-cool: #4fd3ff;
+            --accent-green: #37e8a0;
+            --accent-purple: #b58cff;
+            --accent-pink: #ff7cc3;
+            --tile-text: #f7f8ff;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            min-height: 100vh;
+            font-family: "Segoe UI", "PingFang SC", "Microsoft Yahei", sans-serif;
+            background: radial-gradient(circle at top, #2a2f5f, #0a0c1b 55%, #05060d 100%);
+            color: #f5f6ff;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 24px;
+        }
+
+        .app {
+            width: min(1200px, 100%);
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        header {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 20px;
+            justify-content: space-between;
+            align-items: flex-start;
+        }
+
+        .brand {
+            max-width: 520px;
+        }
+
+        .badge {
+            display: inline-flex;
+            padding: 6px 14px;
+            border-radius: 999px;
+            background: linear-gradient(120deg, #ff9f1a, #ff5f6d);
+            color: #101018;
+            font-weight: 700;
+            letter-spacing: 0.05em;
+            margin-bottom: 12px;
+            font-size: 0.75rem;
+        }
+
+        h1 {
+            font-size: clamp(1.8rem, 2.6vw, 2.6rem);
+            margin-bottom: 10px;
+        }
+
+        .tagline {
+            font-size: 0.95rem;
+            opacity: 0.85;
+            line-height: 1.5;
+        }
+
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(140px, 1fr));
+            gap: 12px;
+            background: rgba(255, 255, 255, 0.08);
+            padding: 16px;
+            border-radius: 16px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+        }
+
+        .stat {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            font-size: 0.85rem;
+        }
+
+        .stat span {
+            font-size: 1.2rem;
+            font-weight: 700;
+            color: var(--accent);
+        }
+
+        .play-area {
+            display: grid;
+            grid-template-columns: minmax(300px, 520px) minmax(220px, 1fr);
+            gap: 20px;
+            align-items: start;
+        }
+
+        .board-shell {
+            position: relative;
+            width: min(90vw, 520px);
+            aspect-ratio: 1 / 1;
+        }
+
+        .board {
+            width: 100%;
+            height: 100%;
+            display: grid;
+            grid-template-columns: repeat(6, 1fr);
+            grid-template-rows: repeat(6, 1fr);
+            gap: 6px;
+            padding: 10px;
+            border-radius: 24px;
+            background: linear-gradient(145deg, rgba(34, 37, 70, 0.92), rgba(13, 16, 32, 0.95));
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            box-shadow: inset 0 0 30px rgba(0, 0, 0, 0.4), 0 20px 40px rgba(0, 0, 0, 0.35);
+        }
+
+        .tile {
+            border-radius: 14px;
+            padding: 6px 4px;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 0.6rem;
+            text-align: center;
+            color: var(--tile-text);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .tile.core {
+            border: none;
+            background: transparent;
+        }
+
+        .tile-head {
+            font-weight: 700;
+            opacity: 0.9;
+        }
+
+        .tile-icon {
+            font-size: 1.2rem;
+            line-height: 1;
+        }
+
+        .tile-foot {
+            opacity: 0.75;
+        }
+
+        .tile-start {
+            background: linear-gradient(140deg, #3cc4ff, #1f5bff);
+        }
+
+        .tile-battle {
+            background: linear-gradient(140deg, #ff8a3d, #ff3d67);
+        }
+
+        .tile-bonus {
+            background: linear-gradient(140deg, #ffd66d, #ff8a3d);
+            color: #1b1200;
+        }
+
+        .tile-event {
+            background: linear-gradient(140deg, #7f7bff, #c54bff);
+        }
+
+        .tile-shop {
+            background: linear-gradient(140deg, #36e3b1, #1ea870);
+        }
+
+        .tile-steal {
+            background: linear-gradient(140deg, #7a7f8c, #444a57);
+        }
+
+        .tile-ultimate {
+            background: linear-gradient(140deg, #ff7cc3, #ff3d8f);
+        }
+
+        .tile.active {
+            box-shadow: 0 0 16px rgba(255, 255, 255, 0.6);
+            border-color: rgba(255, 255, 255, 0.4);
+        }
+
+        .token {
+            position: absolute;
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            background: radial-gradient(circle at 30% 30%, #fff7d6, #ffcc3d 70%, #b86b00 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1rem;
+            box-shadow: 0 6px 16px rgba(0, 0, 0, 0.35);
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+        }
+
+        .token.move {
+            animation: hop 0.3s ease;
+        }
+
+        @keyframes hop {
+            0% {
+                transform: translate(-50%, -50%) scale(1);
+            }
+            50% {
+                transform: translate(-50%, -60%) scale(1.12);
+            }
+            100% {
+                transform: translate(-50%, -50%) scale(1);
+            }
+        }
+
+        .center-hub {
+            position: absolute;
+            inset: 16% 16%;
+            background: linear-gradient(145deg, rgba(16, 18, 38, 0.96), rgba(40, 43, 80, 0.96));
+            border-radius: 24px;
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            padding: 18px;
+            text-align: center;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
+        }
+
+        .hub-title {
+            font-weight: 700;
+            letter-spacing: 0.08em;
+            color: var(--accent);
+            font-size: 0.75rem;
+        }
+
+        .meter {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            font-size: 0.75rem;
+        }
+
+        .bar {
+            height: 10px;
+            border-radius: 999px;
+            background: rgba(255, 255, 255, 0.1);
+            overflow: hidden;
+        }
+
+        .bar-fill {
+            height: 100%;
+            width: 0;
+            background: linear-gradient(90deg, #ffe066, #ff8a3d);
+            transition: width 0.3s ease;
+        }
+
+        .bar-fill.boss {
+            background: linear-gradient(90deg, #ff6b6b, #ff1e53);
+        }
+
+        .hub-actions {
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+        }
+
+        button {
+            border: none;
+            border-radius: 999px;
+            padding: 10px 18px;
+            font-weight: 700;
+            cursor: pointer;
+            font-size: 0.85rem;
+            color: #101018;
+            background: linear-gradient(135deg, #ffd86f, #ff9f1a);
+            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.35);
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 12px 24px rgba(0, 0, 0, 0.4);
+        }
+
+        button:disabled {
+            cursor: not-allowed;
+            opacity: 0.5;
+            transform: none;
+            box-shadow: none;
+        }
+
+        .secondary {
+            background: linear-gradient(135deg, #6ae8ff, #4fd3ff);
+        }
+
+        .dice {
+            font-size: 2rem;
+            font-weight: 800;
+            letter-spacing: 0.1em;
+            color: var(--accent);
+        }
+
+        .status {
+            font-size: 0.75rem;
+            opacity: 0.8;
+        }
+
+        .log {
+            background: rgba(255, 255, 255, 0.08);
+            border-radius: 20px;
+            padding: 16px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            min-height: 320px;
+        }
+
+        .log-title {
+            font-weight: 700;
+            margin-bottom: 12px;
+            color: var(--accent-cool);
+        }
+
+        .log-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            font-size: 0.8rem;
+            max-height: 360px;
+            overflow-y: auto;
+            padding-right: 6px;
+        }
+
+        .log-item {
+            background: rgba(0, 0, 0, 0.25);
+            padding: 8px 10px;
+            border-radius: 10px;
+            line-height: 1.4;
+        }
+
+        .overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(4, 6, 14, 0.75);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.2s ease;
+            z-index: 10;
+        }
+
+        .overlay.show {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        .modal {
+            width: min(420px, 90vw);
+            background: linear-gradient(160deg, #1b1f3f, #0f1224);
+            border-radius: 20px;
+            padding: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
+            color: #f5f6ff;
+        }
+
+        .modal-title {
+            font-weight: 700;
+            font-size: 1.1rem;
+            margin-bottom: 12px;
+            color: var(--accent);
+        }
+
+        .modal-body {
+            font-size: 0.9rem;
+            line-height: 1.5;
+            margin-bottom: 16px;
+        }
+
+        .modal-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            justify-content: flex-end;
+        }
+
+        .modal-btn {
+            border: none;
+            border-radius: 999px;
+            padding: 8px 16px;
+            font-weight: 700;
+            cursor: pointer;
+            font-size: 0.85rem;
+            color: #101018;
+            background: linear-gradient(135deg, #ffd86f, #ff9f1a);
+        }
+
+        .modal-btn.ghost {
+            background: rgba(255, 255, 255, 0.12);
+            color: #f5f6ff;
+        }
+
+        .modal-btn:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+
+        .qte {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .qte-track {
+            position: relative;
+            height: 14px;
+            border-radius: 999px;
+            background: rgba(255, 255, 255, 0.1);
+            overflow: hidden;
+        }
+
+        .qte-zone {
+            position: absolute;
+            left: 42%;
+            width: 16%;
+            top: 0;
+            bottom: 0;
+            background: linear-gradient(90deg, rgba(79, 211, 255, 0.8), rgba(79, 211, 255, 0.3));
+        }
+
+        .qte-indicator {
+            position: absolute;
+            width: 12px;
+            height: 24px;
+            background: var(--accent);
+            border-radius: 6px;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            box-shadow: 0 0 12px rgba(255, 204, 61, 0.8);
+        }
+
+        .qte-timer {
+            height: 6px;
+            border-radius: 999px;
+            background: rgba(255, 255, 255, 0.1);
+            overflow: hidden;
+        }
+
+        .qte-timer-bar {
+            height: 100%;
+            background: linear-gradient(90deg, #ff6b6b, #ffcc3d);
+            width: 100%;
+        }
+
+        .qte-tip {
+            font-size: 0.8rem;
+            opacity: 0.8;
+        }
+
+        @media (max-width: 900px) {
+            .play-area {
+                grid-template-columns: 1fr;
+            }
+
+            .board-shell {
+                margin: 0 auto;
+            }
+
+            .log {
+                min-height: 220px;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="app">
+        <header>
+            <div class="brand">
+                <div class="badge">RIDER MONOPOLY</div>
+                <h1>假面骑士：变身大富翁</h1>
+                <p class="tagline">掷骰走格，攒满能量释放必杀。20回合内击败 Boss 就能完成变身挑战！</p>
+            </div>
+            <div class="stats">
+                <div class="stat">回合<br><span id="turnText">1/20</span></div>
+                <div class="stat">金币<br><span id="coinsText">120</span></div>
+                <div class="stat">能量<br><span id="powerText">0</span></div>
+                <div class="stat">护盾<br><span id="shieldText">0</span></div>
+                <div class="stat">加速<br><span id="boostText">0</span></div>
+                <div class="stat">Boss HP<br><span id="bossText">100</span></div>
+            </div>
+        </header>
+
+        <section class="play-area">
+            <div class="board-shell">
+                <div class="board" id="board"></div>
+                <div class="center-hub">
+                    <div>
+                        <div class="hub-title">战斗核心</div>
+                        <div class="status" id="statusText">等待掷骰中</div>
+                    </div>
+                    <div class="meter">
+                        <span>能量</span>
+                        <div class="bar"><div class="bar-fill" id="powerBar"></div></div>
+                    </div>
+                    <div class="meter">
+                        <span>Boss HP</span>
+                        <div class="bar"><div class="bar-fill boss" id="bossBar"></div></div>
+                    </div>
+                    <div class="hub-actions">
+                        <button id="rollBtn">掷骰</button>
+                        <button id="resetBtn" class="secondary">重开</button>
+                    </div>
+                    <div class="dice" id="diceDisplay">-</div>
+                </div>
+            </div>
+            <aside class="log">
+                <div class="log-title">战斗播报</div>
+                <div class="log-list" id="logList"></div>
+            </aside>
+        </section>
+    </div>
+
+    <div class="overlay" id="overlay">
+        <div class="modal" id="modal">
+            <div class="modal-title" id="modalTitle"></div>
+            <div class="modal-body" id="modalBody"></div>
+            <div class="modal-actions" id="modalActions"></div>
+        </div>
+    </div>
+
+    <script>
+        const boardElement = document.getElementById('board')
+        const rollBtn = document.getElementById('rollBtn')
+        const resetBtn = document.getElementById('resetBtn')
+        const diceDisplay = document.getElementById('diceDisplay')
+        const logList = document.getElementById('logList')
+        const statusText = document.getElementById('statusText')
+        const turnText = document.getElementById('turnText')
+        const coinsText = document.getElementById('coinsText')
+        const powerText = document.getElementById('powerText')
+        const shieldText = document.getElementById('shieldText')
+        const boostText = document.getElementById('boostText')
+        const bossText = document.getElementById('bossText')
+        const powerBar = document.getElementById('powerBar')
+        const bossBar = document.getElementById('bossBar')
+        const overlay = document.getElementById('overlay')
+        const modalTitle = document.getElementById('modalTitle')
+        const modalBody = document.getElementById('modalBody')
+        const modalActions = document.getElementById('modalActions')
+
+        const TILE_CONFIGS = [
+            { type: 'start', title: '起点', icon: '🏁', desc: '金币+20', value: 20 },
+            { type: 'bonus', title: '奖励', icon: '💰', desc: '金币+30', value: 30 },
+            { type: 'battle', title: '战斗', icon: '⚔️', desc: 'QTE 对决' },
+            { type: 'event', title: '事件', icon: '🎲', desc: '随机效果' },
+            { type: 'shop', title: '改装', icon: '🛠️', desc: '升级装备' },
+            { type: 'steal', title: '陷阱', icon: '🦹', desc: '金币-30' },
+            { type: 'battle', title: '战斗', icon: '⚔️', desc: 'Boss 来袭' },
+            { type: 'bonus', title: '补给', icon: '💎', desc: '金币+40', value: 40 },
+            { type: 'event', title: '事件', icon: '🔮', desc: '随机效果' },
+            { type: 'ultimate', title: '必杀', icon: '🌈', desc: '终结技' },
+            { type: 'bonus', title: '奖励', icon: '💰', desc: '金币+25', value: 25 },
+            { type: 'battle', title: '战斗', icon: '⚔️', desc: 'QTE 对决' },
+            { type: 'shop', title: '补给', icon: '🧩', desc: '强化动力' },
+            { type: 'event', title: '事件', icon: '🎯', desc: '随机效果' },
+            { type: 'steal', title: '陷阱', icon: '💥', desc: '金币-30' },
+            { type: 'bonus', title: '奖励', icon: '🪙', desc: '金币+35', value: 35 },
+            { type: 'battle', title: '战斗', icon: '⚔️', desc: 'Boss 来袭' },
+            { type: 'event', title: '事件', icon: '📣', desc: '随机效果' },
+            { type: 'shop', title: '升级', icon: '⚙️', desc: '调整策略' },
+            { type: 'bonus', title: '大奖', icon: '🏆', desc: '金币+50', value: 50 }
+        ]
+
+        const EVENTS = [
+            { title: '粉丝应援', desc: '人气爆表，金币+30。', effect: { coins: 30 } },
+            { title: '能量补给', desc: '核心满充，能量+20。', effect: { power: 20 } },
+            { title: '交通罚单', desc: '违规变身，金币-25。', effect: { coins: -25 } },
+            { title: '护盾升级', desc: '临时护盾+1。', effect: { shield: 1 } },
+            { title: 'Boss 露出破绽', desc: '趁机输出，Boss HP -12。', effect: { boss: -12 } },
+            { title: '引擎过载', desc: '能量-15，金币+15。', effect: { power: -15, coins: 15 } }
+        ]
+
+        const state = {
+            position: 0,
+            coins: 120,
+            power: 0,
+            bossHp: 100,
+            shield: 0,
+            boost: 0,
+            turn: 1,
+            maxTurns: 20,
+            isRolling: false,
+            isGameOver: false,
+            tiles: [],
+            token: null
+        }
+
+        const buildPath = (size) => {
+            const path = []
+            for (let col = 0; col < size; col += 1) {
+                path.push({ row: 0, col })
+            }
+            for (let row = 1; row < size; row += 1) {
+                path.push({ row, col: size - 1 })
+            }
+            for (let col = size - 2; col >= 0; col -= 1) {
+                path.push({ row: size - 1, col })
+            }
+            for (let row = size - 2; row > 0; row -= 1) {
+                path.push({ row, col: 0 })
+            }
+            return path
+        }
+
+        const pathPositions = buildPath(6)
+
+        const buildBoard = () => {
+            boardElement.innerHTML = ''
+            const indexMap = new Map()
+            pathPositions.forEach((pos, index) => {
+                indexMap.set(`${pos.row},${pos.col}`, index)
+            })
+            const tileRefs = []
+
+            for (let row = 0; row < 6; row += 1) {
+                for (let col = 0; col < 6; col += 1) {
+                    const tile = document.createElement('div')
+                    const key = `${row},${col}`
+                    if (indexMap.has(key)) {
+                        const index = indexMap.get(key)
+                        const config = TILE_CONFIGS[index]
+                        tile.className = `tile tile-${config.type}`
+                        tile.dataset.index = index
+                        tile.innerHTML = `
+                            <div class="tile-head">${config.title}</div>
+                            <div class="tile-icon">${config.icon}</div>
+                            <div class="tile-foot">${config.desc}</div>
+                        `
+                        tileRefs[index] = tile
+                    } else {
+                        tile.className = 'tile core'
+                    }
+                    boardElement.appendChild(tile)
+                }
+            }
+
+            state.tiles = tileRefs
+            state.token = document.createElement('div')
+            state.token.className = 'token'
+            state.token.textContent = '🏍️'
+            placeToken(0)
+        }
+
+        const placeToken = (index) => {
+            state.tiles.forEach((tile) => tile.classList.remove('active'))
+            const tile = state.tiles[index]
+            if (!tile) {
+                return
+            }
+            tile.classList.add('active')
+            tile.appendChild(state.token)
+            state.token.classList.remove('move')
+            void state.token.offsetWidth
+            state.token.classList.add('move')
+        }
+
+        const addLog = (text) => {
+            const item = document.createElement('div')
+            item.className = 'log-item'
+            item.textContent = text
+            logList.prepend(item)
+        }
+
+        const clamp = (value, min, max) => Math.max(min, Math.min(max, value))
+
+        const applyDelta = (delta) => {
+            if (delta.coins) {
+                state.coins = clamp(state.coins + delta.coins, 0, 9999)
+            }
+            if (delta.power) {
+                state.power = clamp(state.power + delta.power, 0, 100)
+            }
+            if (delta.shield) {
+                state.shield = clamp(state.shield + delta.shield, 0, 99)
+            }
+            if (delta.boost) {
+                state.boost = clamp(state.boost + delta.boost, 0, 8)
+            }
+            if (delta.boss) {
+                state.bossHp = clamp(state.bossHp + delta.boss, 0, 100)
+            }
+            updateUI()
+            if (state.bossHp <= 0 && !state.isGameOver) {
+                endGame('胜利！Boss 被击破')
+            }
+        }
+
+        const updateUI = () => {
+            turnText.textContent = `${state.turn}/${state.maxTurns}`
+            coinsText.textContent = state.coins
+            powerText.textContent = state.power
+            shieldText.textContent = state.shield
+            boostText.textContent = state.boost
+            bossText.textContent = state.bossHp
+            powerBar.style.width = `${state.power}%`
+            bossBar.style.width = `${state.bossHp}%`
+        }
+
+        const updateStatus = (text) => {
+            statusText.textContent = text
+        }
+
+        const animateDice = (result) => new Promise((resolve) => {
+            let ticks = 0
+            const timer = setInterval(() => {
+                ticks += 1
+                diceDisplay.textContent = Math.floor(Math.random() * 6) + 1
+                if (ticks >= 10) {
+                    clearInterval(timer)
+                    diceDisplay.textContent = result
+                    resolve()
+                }
+            }, 70)
+        })
+
+        const moveSteps = (steps) => new Promise((resolve) => {
+            let moved = 0
+            const stepOnce = () => {
+                if (moved >= steps) {
+                    resolve()
+                    return
+                }
+                moved += 1
+                state.position = (state.position + 1) % state.tiles.length
+                placeToken(state.position)
+                setTimeout(stepOnce, 260)
+            }
+            stepOnce()
+        })
+
+        const closeModal = () => {
+            overlay.classList.remove('show')
+            modalTitle.textContent = ''
+            modalBody.innerHTML = ''
+            modalActions.innerHTML = ''
+        }
+
+        const openModal = ({ title, body, actions, lock }) => new Promise((resolve) => {
+            modalTitle.textContent = title
+            modalBody.innerHTML = ''
+            if (typeof body === 'string') {
+                modalBody.innerHTML = `<p>${body}</p>`
+            } else if (body) {
+                modalBody.appendChild(body)
+            }
+            modalActions.innerHTML = ''
+            actions.forEach((action) => {
+                const btn = document.createElement('button')
+                btn.className = `modal-btn ${action.variant || ''}`
+                btn.textContent = action.label
+                btn.disabled = Boolean(action.disabled)
+                btn.addEventListener('click', () => {
+                    closeModal()
+                    resolve(action.value)
+                })
+                modalActions.appendChild(btn)
+            })
+            overlay.classList.add('show')
+            if (!lock) {
+                overlay.onclick = (event) => {
+                    if (event.target === overlay) {
+                        closeModal()
+                        resolve(null)
+                    }
+                }
+            } else {
+                overlay.onclick = null
+            }
+        })
+
+        const battleQTE = () => new Promise((resolve) => {
+            modalTitle.textContent = '战斗格：QTE 必杀'
+            modalBody.innerHTML = `
+                <div class="qte">
+                    <div class="qte-track">
+                        <div class="qte-zone"></div>
+                        <div class="qte-indicator" id="qteIndicator"></div>
+                    </div>
+                    <div class="qte-timer"><div class="qte-timer-bar" id="qteTimer"></div></div>
+                    <div class="qte-tip">指针进入高能区时点击“出招”！</div>
+                </div>
+            `
+            modalActions.innerHTML = ''
+            const actionBtn = document.createElement('button')
+            actionBtn.className = 'modal-btn'
+            actionBtn.textContent = '出招'
+            modalActions.appendChild(actionBtn)
+            overlay.classList.add('show')
+            overlay.onclick = null
+
+            const indicator = document.getElementById('qteIndicator')
+            const timerBar = document.getElementById('qteTimer')
+            let direction = 1
+            let pos = 0.1
+            let startTime = null
+            let finished = false
+            const duration = 3800
+
+            const animate = (time) => {
+                if (finished) {
+                    return
+                }
+                if (!startTime) {
+                    startTime = time
+                }
+                const elapsed = time - startTime
+                if (elapsed >= duration) {
+                    finished = true
+                    closeModal()
+                    resolve(false)
+                    return
+                }
+                pos += direction * 0.018
+                if (pos >= 0.9) {
+                    pos = 0.9
+                    direction = -1
+                }
+                if (pos <= 0.1) {
+                    pos = 0.1
+                    direction = 1
+                }
+                indicator.style.left = `${pos * 100}%`
+                timerBar.style.width = `${100 - (elapsed / duration) * 100}%`
+                requestAnimationFrame(animate)
+            }
+
+            actionBtn.addEventListener('click', () => {
+                if (finished) {
+                    return
+                }
+                finished = true
+                const success = pos >= 0.42 && pos <= 0.58
+                closeModal()
+                resolve(success)
+            })
+
+            requestAnimationFrame(animate)
+        })
+
+        const handleBattle = async () => {
+            updateStatus('战斗触发，进入 QTE！')
+            const success = await battleQTE()
+            if (success) {
+                const bonus = Math.floor(state.power / 25) * 4
+                const damage = 12 + bonus
+                applyDelta({ boss: -damage, coins: 25, power: 18 })
+                addLog(`必杀命中！Boss HP -${damage}，金币+25。`)
+                updateStatus('命中！能量上升')
+            } else {
+                applyDelta({ coins: -20, power: -10 })
+                addLog('QTE 失败，被反击！金币-20，能量-10。')
+                updateStatus('失误！稳住')
+            }
+        }
+
+        const handleEvent = async () => {
+            const event = EVENTS[Math.floor(Math.random() * EVENTS.length)]
+            updateStatus('事件触发')
+            await openModal({
+                title: event.title,
+                body: event.desc,
+                actions: [{ label: '确认', value: 'ok' }]
+            })
+            applyDelta(event.effect)
+            addLog(`事件：${event.title}`)
+            updateStatus('继续前进')
+        }
+
+        const handleShop = async () => {
+            updateStatus('进入改装商店')
+            const choice = await openModal({
+                title: '改装商店',
+                body: '选择一项改装，提升你的战斗力。',
+                actions: [
+                    { label: '护盾 +1（-40）', value: 'shield', disabled: state.coins < 40 },
+                    { label: '能量 +25（-30）', value: 'power', disabled: state.coins < 30 },
+                    { label: '加速 +2（-50）', value: 'boost', disabled: state.coins < 50 },
+                    { label: '不购买', value: 'none', variant: 'ghost' }
+                ]
+            })
+
+            if (choice === 'shield') {
+                applyDelta({ coins: -40, shield: 1 })
+                addLog('改装完成：护盾 +1。')
+                updateStatus('护盾就绪')
+            }
+            if (choice === 'power') {
+                applyDelta({ coins: -30, power: 25 })
+                addLog('改装完成：能量 +25。')
+                updateStatus('能量充能')
+            }
+            if (choice === 'boost') {
+                applyDelta({ coins: -50, boost: 2 })
+                addLog('改装完成：下回合加速 +2。')
+                updateStatus('引擎加速')
+            }
+            if (!choice || choice === 'none') {
+                updateStatus('取消改装')
+            }
+        }
+
+        const handleUltimate = async () => {
+            updateStatus('必杀格：能量检测')
+            if (state.power >= 100) {
+                const confirm = await openModal({
+                    title: '终结技已就绪',
+                    body: '能量已满，释放终结技将造成巨大伤害并清空能量。',
+                    actions: [
+                        { label: '释放必杀', value: true },
+                        { label: '暂时保留', value: false, variant: 'ghost' }
+                    ],
+                    lock: true
+                })
+                if (confirm) {
+                    applyDelta({ power: -100, boss: -35, coins: 60 })
+                    addLog('终结技发动！Boss HP -35，金币+60。')
+                    updateStatus('终结技命中！')
+                } else {
+                    applyDelta({ power: 10 })
+                    addLog('保留必杀，能量 +10。')
+                    updateStatus('能量继续蓄积')
+                }
+            } else {
+                applyDelta({ power: 15 })
+                addLog('必杀格：能量 +15。')
+                updateStatus('能量蓄积中')
+            }
+        }
+
+        const handleTile = async () => {
+            const config = TILE_CONFIGS[state.position]
+            if (!config) {
+                return
+            }
+            if (config.type === 'start') {
+                applyDelta({ coins: config.value })
+                addLog('起点补给：金币 +20。')
+                updateStatus('补给到手')
+            }
+            if (config.type === 'bonus') {
+                applyDelta({ coins: config.value })
+                addLog(`奖励格：金币 +${config.value}。`)
+                updateStatus('奖励入账')
+            }
+            if (config.type === 'steal') {
+                if (state.shield > 0) {
+                    applyDelta({ shield: -1 })
+                    addLog('陷阱触发，但护盾抵挡。')
+                    updateStatus('护盾挡下伤害')
+                } else {
+                    applyDelta({ coins: -30 })
+                    addLog('陷阱触发：金币 -30。')
+                    updateStatus('小心陷阱')
+                }
+            }
+            if (config.type === 'event') {
+                await handleEvent()
+            }
+            if (config.type === 'shop') {
+                await handleShop()
+            }
+            if (config.type === 'battle') {
+                await handleBattle()
+            }
+            if (config.type === 'ultimate') {
+                await handleUltimate()
+            }
+        }
+
+        const endGame = async (title) => {
+            state.isGameOver = true
+            rollBtn.disabled = true
+            updateStatus('战斗结束')
+            const choice = await openModal({
+                title: `战斗结束：${title}`,
+                body: `最终金币：${state.coins} | 剩余能量：${state.power} | 回合：${state.turn}/${state.maxTurns}`,
+                actions: [
+                    { label: '再来一局', value: 'restart' },
+                    { label: '关闭', value: 'close', variant: 'ghost' }
+                ],
+                lock: true
+            })
+            if (choice === 'restart') {
+                resetGame()
+            }
+        }
+
+        const nextTurn = () => {
+            if (state.isGameOver) {
+                return
+            }
+            if (state.turn >= state.maxTurns) {
+                endGame('回合耗尽，挑战失败')
+                return
+            }
+            state.turn += 1
+            updateUI()
+            updateStatus('等待掷骰中')
+        }
+
+        const resetGame = () => {
+            state.position = 0
+            state.coins = 120
+            state.power = 0
+            state.bossHp = 100
+            state.shield = 0
+            state.boost = 0
+            state.turn = 1
+            state.isRolling = false
+            state.isGameOver = false
+            rollBtn.disabled = false
+            diceDisplay.textContent = '-'
+            logList.innerHTML = ''
+            addLog('新的战斗开始！')
+            placeToken(0)
+            updateUI()
+            updateStatus('等待掷骰中')
+        }
+
+        const handleRoll = async () => {
+            if (state.isRolling || state.isGameOver) {
+                return
+            }
+            state.isRolling = true
+            rollBtn.disabled = true
+            updateStatus('掷骰中...')
+
+            let dice = Math.floor(Math.random() * 6) + 1
+            if (state.boost > 0) {
+                dice += state.boost
+                addLog(`引擎加速！本回合步数 +${state.boost}。`)
+                state.boost = 0
+            }
+
+            await animateDice(dice)
+            await moveSteps(dice)
+            await handleTile()
+
+            state.isRolling = false
+            rollBtn.disabled = state.isGameOver
+            if (!state.isGameOver) {
+                nextTurn()
+            }
+        }
+
+        rollBtn.addEventListener('click', handleRoll)
+        resetBtn.addEventListener('click', resetGame)
+
+        buildBoard()
+        resetGame()
+    </script>
+</body>
+
+</html>

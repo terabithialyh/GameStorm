@@ -14,6 +14,7 @@ GameStorm is a collection of HTML5 mobile mini games built with vanilla JavaScri
 6. **猩BA** (猩BA) - `XBA/index.html` - Half-court shooting (tap & hold aiming)
 7. **Trust Me** (别停！别想！反向版) - `TrustMe/index.html` - Reverse-reaction reflex game
 8. **社畜无双** (社畜无双) - `Rogue/index.html` - 办公室割草 Roguelite
+9. **Rider Monopoly** (假面骑士：变身大富翁) - `Rider_Monopoly/index.html` - 变身 + 掷骰 + 速战大富翁
 
 All games use a **single-file architecture** with no build system. All HTML, CSS, and JavaScript are contained in their respective `index.html` files.
 
@@ -43,6 +44,7 @@ Server runs on http://localhost:8000 and serves:
 - 猩BA: http://localhost:8000/XBA/
 - Trust Me: http://localhost:8000/TrustMe/
 - 社畜无双: http://localhost:8000/Rogue/
+- Rider Monopoly: http://localhost:8000/Rider_Monopoly/
 
 **Shell Scripts Features:**
 - Automatic dependency installation
@@ -144,6 +146,19 @@ let state = {
 - **Input Handling:** Screen split into Left/Right touch zones
 - **Camera Logic:** Smoothly follows player height (`cameraY` lerp)
 - **Audio:** Web Audio API oscillator for simple generated SFX
+
+### Rider Monopoly Architecture（假面骑士：变身大富翁）
+
+**位置：** `Rider_Monopoly/index.html`
+
+**核心玩法：**
+- 6×6 棋盘外圈 20 格移动路径，掷骰前进触发格子事件
+- 格子类型：起点补给、奖励、战斗 QTE、事件、改装商店、陷阱、必杀格
+- 能量条与 Boss HP 条联动，能量满可释放终结技造成高额伤害
+
+**交互与 UI：**
+- DOM 网格渲染棋盘，中心面板展示状态与操作按钮
+- 模态弹窗承载事件说明、商店选择与 QTE 战斗
 
 ## Making Changes
 

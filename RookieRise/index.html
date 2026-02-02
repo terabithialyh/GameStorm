@@ -70,12 +70,17 @@
       background: rgba(0, 0, 0, 0.18);
       border: 2px solid rgba(255, 255, 255, 0.18);
       backdrop-filter: blur(10px);
+      height: 64px;
+      flex-shrink: 0;
+      overflow: hidden;
     }
 
     .brand {
       display: flex;
       flex-direction: column;
       gap: 2px;
+      flex-shrink: 0;
+      min-width: 0;
     }
 
     .brand h1 {
@@ -94,8 +99,10 @@
       display: flex;
       align-items: center;
       gap: 10px;
-      flex-wrap: wrap;
+      flex-wrap: nowrap;
       justify-content: flex-end;
+      overflow-x: auto;
+      flex-shrink: 1;
     }
 
     .pill {
@@ -109,6 +116,7 @@
       box-shadow: 0 8px 20px rgba(0, 0, 0, 0.12);
       font-size: 12px;
       white-space: nowrap;
+      flex-shrink: 0;
     }
 
     .pill b {
@@ -130,7 +138,8 @@
       gap: 10px;
       align-items: center;
       justify-content: flex-end;
-      flex-wrap: wrap;
+      flex-wrap: nowrap;
+      flex-shrink: 0;
     }
 
     button {
@@ -329,12 +338,30 @@
 
     @media (max-width: 540px) {
       header {
-        flex-direction: column;
-        align-items: stretch;
+        flex-direction: row;
+        align-items: center;
+        min-height: 50px;
+        padding: 8px 10px;
+        gap: 8px;
+      }
+
+      .brand h1 {
+        font-size: 14px;
+      }
+
+      .brand .sub {
+        display: none;
       }
 
       .hud {
-        justify-content: space-between;
+        justify-content: flex-end;
+        gap: 6px;
+      }
+
+      .pill {
+        padding: 4px 8px;
+        font-size: 11px;
+        gap: 4px;
       }
 
       .metaRow {
@@ -418,6 +445,7 @@
     </div>
   </div>
 
+  <script src="https://cdn.jsdelivr.net/npm/ammo.js@0.0.10/builds/ammo.wasm.js"></script>
   <script>
     (() => {
       "use strict";
@@ -487,21 +515,68 @@
         BACKBOARD_W: 1.8,
         BACKBOARD_H: 1.2,
         BACKBOARD_Y0: 2.65,
-        RIM_R: 0.23,
+        RIM_R: 0.31,
         BALL_R: 0.12,
         THREE_R: 7.24,
       });
 
       const PHYS = Object.freeze({
         G: -14.0, // 稍微夸张一些，让手感更“游戏化”，但仍像真实抛物线
-        AIR_DRAG: 0.04,
+        AIR_DRAG: 0.03,
+        ANGULAR_DAMPING: 0.6,
+        BALL_REST: 0.72,
+        BALL_FRICTION: 0.6,
+        BALL_COLLIDER_SCALE: 0.85,
         FLOOR_REST: 0.55,
         RIM_REST: 0.62,
         BOARD_REST: 0.68,
         WALL_REST: 0.45,
-        FLOOR_FRICTION: 0.88,
+        FLOOR_FRICTION: 0.9,
+        RIM_FRICTION: 0.45,
+        BOARD_FRICTION: 0.55,
+        WALL_FRICTION: 0.5,
         TANGENT_FRICTION: 0.92,
       });
+
+      const COLLISION = Object.freeze({
+        BALL: 1,
+        STATIC: 2,
+        RIM: 4,
+      });
+
+      // ====== Ammo.js 物理引擎 ======
+      let AmmoLib = null;
+      const physics = {
+        ready: false,
+        world: null,
+        dispatcher: null,
+        tmpTransform: null,
+        ballShape: null,
+        ballBodies: new Set(),
+        staticBodies: [],
+      };
+
+      const AMMO_CFG = Object.freeze({
+        FLOOR_THICK: 0.4,
+        WALL_THICK: 0.35,
+        BOARD_THICK: 0.06,
+        RIM_TUBE_R: 0.01,
+        RIM_SEGMENTS: 24,
+        MAX_SUB_STEPS: 6,
+        FIXED_STEP: 1 / 120,
+      });
+
+      function getRimInnerRadius() {
+        return Math.max(0.01, WORLD.RIM_R - AMMO_CFG.RIM_TUBE_R);
+      }
+
+      function getBallColliderRadius() {
+        return physics.ready ? WORLD.BALL_R * PHYS.BALL_COLLIDER_SCALE : WORLD.BALL_R;
+      }
+
+      function getScoreRadius() {
+        return Math.max(0.01, getRimInnerRadius() - getBallColliderRadius());
+      }
 
       // ====== 剧情与比赛配置 ======
       // 线性剧情：每场比赛前/后触发对话，胜利进入下一场。
@@ -739,7 +814,22 @@
 
       window.addEventListener("resize", resize);
       computeCameraBasis();
-      resize();
+
+      // 延迟初始化：确保页面布局完成后再计算投影矩阵
+      // 使用 requestAnimationFrame 确保浏览器已完成布局计算
+      function initResize() {
+        resize();
+        // 再次延迟确保完全正确
+        requestAnimationFrame(() => {
+          resize();
+        });
+      }
+
+      if (document.readyState === 'complete') {
+        initResize();
+      } else {
+        window.addEventListener('load', initResize);
+      }
 
       function computeProjectionMap() {
         // 计算“球场平面(x,z) -> 屏幕像素(u,v)”的单应映射，并缓存逆映射用于屏幕->世界
@@ -881,7 +971,7 @@
         state.match.streak = 0;
         state.match.shots = 0;
         state.match.makes = 0;
-        state.balls.length = 0;
+        clearPhysicsBalls();
         state.aim.active = false;
         state.aim.previewBall = null;
         updateHud();
@@ -933,8 +1023,8 @@
       function rayFromScreen(sx, sy) {
         // 把屏幕坐标（CSS px）转换为世界坐标射线（相机坐标系 -> 世界坐标）
         // 用于把手指起点/终点可靠地映射到球场平面，避免 offsetX/缩放带来的偏移。
-        const rect = canvas.getBoundingClientRect();
-        const dpr = canvas.width / rect.width;
+        // 使用缓存的 dpr，确保与 computeProjectionMap 时一致
+        const dpr = projectionMap.dpr || 1;
         const px = sx * dpr;
         const py = sy * dpr;
         const cx = canvas.width * 0.5;
@@ -947,20 +1037,23 @@
         return { origin: camera.pos, dir };
       }
 
-      function screenToCourtWorld(sx, sy, yPlane) {
+      function screenToCourtWorld(sx, sy, yPlane, clampToCourt = true) {
         // 首选：使用单应逆变换（与地板四边形严格对齐）
         if (projectionMap.ready && projectionMap.Hinv) {
-          const rect = canvas.getBoundingClientRect();
-          const dpr = canvas.width / rect.width;
+          // 使用缓存的 dpr，确保与 computeProjectionMap 时一致
+          const dpr = projectionMap.dpr || 1;
           const px = sx * dpr;
           const py = sy * dpr;
           const w = applyHomography(projectionMap.Hinv, px, py);
           if (w) {
-            return vec3(
-              clamp(w.x, -WORLD.COURT_W * 0.48, WORLD.COURT_W * 0.48),
-              yPlane,
-              clamp(w.y, 0.2, WORLD.SHOOT_Z_MAX),
-            );
+            if (clampToCourt) {
+              return vec3(
+                clamp(w.x, -WORLD.COURT_W * 0.48, WORLD.COURT_W * 0.48),
+                yPlane,
+                clamp(w.y, 0.2, WORLD.SHOOT_Z_MAX),
+              );
+            }
+            return vec3(w.x, yPlane, w.y);
           }
         }
 
@@ -971,11 +1064,14 @@
         const t = (yPlane - ray.origin.y) / ray.dir.y;
         if (t <= 0) return null;
         const hit = vadd(ray.origin, vmul(ray.dir, t));
-        return vec3(
-          clamp(hit.x, -WORLD.COURT_W * 0.48, WORLD.COURT_W * 0.48),
-          yPlane,
-          clamp(hit.z, 0.2, WORLD.SHOOT_Z_MAX),
-        );
+        if (clampToCourt) {
+          return vec3(
+            clamp(hit.x, -WORLD.COURT_W * 0.48, WORLD.COURT_W * 0.48),
+            yPlane,
+            clamp(hit.z, 0.2, WORLD.SHOOT_Z_MAX),
+          );
+        }
+        return vec3(hit.x, yPlane, hit.z);
       }
 
       const INPUT = Object.freeze({
@@ -1067,161 +1163,420 @@
       }
 
       function getAimOrigin(fromPos) {
-        if (!state.firstPerson.active || !camera.basis) return fromPos;
-        return vadd(fromPos, vmul(camera.basis.forward, 0.35));
+        return fromPos;
       }
 
       function autoAimVelocityAndChance(fromPos) {
-        // 自动瞄准：用“带空气阻力的解析解”初速度 + 数值校准，确保真实过框
-        const d = Math.hypot(fromPos.x - WORLD.HOOP.x, fromPos.z - WORLD.HOOP.z);
-        const dist01 = clamp((d - 2.0) / 10.0, 0, 1);
-        const chance = 1;
+        // 纯物理自动瞄准：通过网格搜索找到能进球的初速度
+        // 模拟包含篮筐碰撞，与实际物理一致
 
-        const kx = PHYS.AIR_DRAG;
-        const ky = PHYS.AIR_DRAG * 0.3;
-        const solveV0 = (d0, t, k) => {
-          if (k < 1e-6) return d0 / t;
-          const e = Math.exp(-k * t);
-          return d0 * k / (1 - e);
-        };
-        const solveV0Y = (d0, t, k, g) => {
-          if (k < 1e-6) return (d0 - 0.5 * g * t * t) / t;
-          const e = Math.exp(-k * t);
-          return (d0 * k - g * t) / (1 - e) + g / k;
-        };
+        const hoopX = WORLD.HOOP.x;
+        const hoopY = WORLD.HOOP.y;
+        const hoopZ = WORLD.HOOP.z;
+        const g = PHYS.G;
 
-        const evaluateShot = (v0, tMax) => {
-          const pos = vec3(fromPos.x, fromPos.y, fromPos.z);
-          const vel = vec3(v0.x, v0.y, v0.z);
-          let prev = vec3(pos.x, pos.y, pos.z);
-          let prevY = pos.y;
-          const dt = 1 / 120;
-          for (let t = 0; t < tMax; t += dt) {
-            vel.x *= 1 - PHYS.AIR_DRAG * dt;
-            vel.y *= 1 - PHYS.AIR_DRAG * dt * 0.3;
-            vel.z *= 1 - PHYS.AIR_DRAG * dt;
-            vel.y += PHYS.G * dt;
-            pos.x += vel.x * dt;
-            pos.y += vel.y * dt;
-            pos.z += vel.z * dt;
-            if (prevY > WORLD.HOOP.y && pos.y <= WORLD.HOOP.y) {
-              const tFrac = (prevY - WORLD.HOOP.y) / Math.max(1e-6, (prevY - pos.y));
-              const x = prev.x + (pos.x - prev.x) * tFrac;
-              const z = prev.z + (pos.z - prev.z) * tFrac;
-              const r = Math.hypot(x - WORLD.HOOP.x, z - WORLD.HOOP.z);
-              return r;
-            }
-            prev = vec3(pos.x, pos.y, pos.z);
-            prevY = pos.y;
-          }
-          return Infinity;
-        };
+        const horizontalDist = Math.hypot(fromPos.x - hoopX, fromPos.z - hoopZ);
+        const dist01 = clamp((horizontalDist - 2.0) / 10.0, 0, 1);
 
-        const simulateScore = (v0) => {
+        // 完整模拟函数，包含篮筐碰撞
+        const simulateFull = (v0) => {
           const ball = {
             pos: vec3(fromPos.x, fromPos.y, fromPos.z),
             vel: vec3(v0.x, v0.y, v0.z),
             prevY: fromPos.y,
           };
           const dt = 1 / 120;
-          const tMax = 2.6;
+          const tMax = 3.0;
+
           for (let t = 0; t < tMax; t += dt) {
             ball.prevY = ball.pos.y;
 
+            // 空气阻力
             ball.vel.x *= 1 - PHYS.AIR_DRAG * dt;
-            ball.vel.y *= 1 - PHYS.AIR_DRAG * dt * 0.3;
+            ball.vel.y *= 1 - PHYS.AIR_DRAG * dt;
             ball.vel.z *= 1 - PHYS.AIR_DRAG * dt;
-            ball.vel.y += PHYS.G * dt;
 
+            // 重力
+            ball.vel.y += g * dt;
+
+            // 积分
             ball.pos.x += ball.vel.x * dt;
             ball.pos.y += ball.vel.y * dt;
             ball.pos.z += ball.vel.z * dt;
 
-            // 篮板碰撞（与实机一致）
+            // 篮板碰撞
             const bz = WORLD.BACKBOARD_Z;
-            const inBoardX = Math.abs(ball.pos.x - WORLD.HOOP.x) <= WORLD.BACKBOARD_W * 0.5 + WORLD.BALL_R;
+            const inBoardX = Math.abs(ball.pos.x - hoopX) <= WORLD.BACKBOARD_W * 0.5 + WORLD.BALL_R;
             const inBoardY = ball.pos.y >= WORLD.BACKBOARD_Y0 - WORLD.BALL_R &&
               ball.pos.y <= WORLD.BACKBOARD_Y0 + WORLD.BACKBOARD_H + WORLD.BALL_R;
-            const crossedBoard = ball.pos.z - bz <= WORLD.BALL_R && (ball.pos.z - ball.vel.z * dt) - bz > WORLD.BALL_R;
-            if (crossedBoard && inBoardX && inBoardY) {
+            if (ball.pos.z - bz <= WORLD.BALL_R && ball.vel.z < 0 && inBoardX && inBoardY) {
               ball.pos.z = bz + WORLD.BALL_R;
               ball.vel.z = -ball.vel.z * PHYS.BOARD_REST;
-              ball.vel.x *= 0.97;
             }
 
-            // 篮筐碰撞（离散点近似）
-            for (const p of rimPoints) {
-              resolveSpherePoint(ball, p, 0.03, PHYS.RIM_REST, PHYS.TANGENT_FRICTION, null);
-            }
+            // 篮筐碰撞（简化：与篮筐圆环碰撞）
+            const rimY = hoopY;
+            if (Math.abs(ball.pos.y - rimY) < WORLD.BALL_R + 0.03) {
+              const dx = ball.pos.x - hoopX;
+              const dz = ball.pos.z - hoopZ;
+              const distFromCenter = Math.hypot(dx, dz);
+              const rimInner = WORLD.RIM_R - 0.02;
+              const rimOuter = WORLD.RIM_R + 0.02;
 
-            // 进球判定（与实机一致）
-            const y0 = ball.prevY;
-            const y1 = ball.pos.y;
-            if (y0 > WORLD.HOOP.y + 0.02 && y1 <= WORLD.HOOP.y - 0.02) {
-              const dx = ball.pos.x - WORLD.HOOP.x;
-              const dz = ball.pos.z - WORLD.HOOP.z;
-              const r = Math.hypot(dx, dz);
-              if (r <= WORLD.RIM_R - WORLD.BALL_R * 0.35) {
-                return true;
+              // 碰到篮筐铁环
+              if (distFromCenter > rimInner && distFromCenter < rimOuter + WORLD.BALL_R) {
+                const normal = { x: dx / distFromCenter, z: dz / distFromCenter };
+                const vDot = ball.vel.x * normal.x + ball.vel.z * normal.z;
+                if (vDot < 0) {
+                  ball.vel.x -= (1 + PHYS.RIM_REST) * vDot * normal.x;
+                  ball.vel.z -= (1 + PHYS.RIM_REST) * vDot * normal.z;
+                }
               }
             }
 
-            if (ball.pos.y < WORLD.BALL_R - 0.2) break;
+            // 进球判定
+            if (ball.prevY > hoopY + 0.02 && ball.pos.y <= hoopY - 0.02 && ball.vel.y < 0) {
+              const dx = ball.pos.x - hoopX;
+              const dz = ball.pos.z - hoopZ;
+              const r = Math.hypot(dx, dz);
+              if (r <= getScoreRadius()) {
+                return { scored: true, r };
+              }
+            }
+
+            if (ball.pos.y < 0) break;
           }
-          return false;
+
+          return { scored: false, r: Infinity };
         };
 
-        const T0 = lerp(0.78, 1.20, dist01);
-        const lift0 = lerp(0.60, 0.85, dist01);
-        let best = { r: Infinity, v: null };
-        const tMin = Math.max(0.6, T0 - 0.18);
-        const tMax = T0 + 0.28;
-        const liftMin = Math.max(0.45, lift0 - 0.12);
-        const liftMax = lift0 + 0.28;
-        const tSteps = 6;
-        const lSteps = 6;
+        // 网格搜索：尝试不同的飞行时间和高度
+        let bestVel = null;
+        let bestScore = Infinity;
 
-        for (let i = 0; i <= tSteps; i++) {
-          const T = lerp(tMin, tMax, i / tSteps);
-          for (let j = 0; j <= lSteps; j++) {
-            const lift = lerp(liftMin, liftMax, j / lSteps);
-            const target = vec3(WORLD.HOOP.x, WORLD.HOOP.y + lift, WORLD.HOOP.z);
-            const dx = target.x - fromPos.x;
-            const dz = target.z - fromPos.z;
-            const dy = target.y - fromPos.y;
-            const vx = solveV0(dx, T, kx);
-            const vz = solveV0(dz, T, kx);
-            const vy = solveV0Y(dy, T, ky, PHYS.G);
+        // 搜索参数范围
+        const tMin = lerp(0.55, 0.75, dist01);
+        const tMax = lerp(0.85, 1.3, dist01);
+        const liftMin = 0.3;
+        const liftMax = 1.2;
+
+        for (let ti = 0; ti <= 10; ti++) {
+          const T = lerp(tMin, tMax, ti / 10);
+
+          for (let li = 0; li <= 10; li++) {
+            const lift = lerp(liftMin, liftMax, li / 10);
+
+            // 计算瞄准点（篮筐上方）
+            const targetX = hoopX;
+            const targetY = hoopY + lift;
+            const targetZ = hoopZ;
+
+            const dx = targetX - fromPos.x;
+            const dz = targetZ - fromPos.z;
+            const dy = targetY - fromPos.y;
+
+            // 计算初速度（考虑空气阻力的补偿）
+            const dragComp = 1 + PHYS.AIR_DRAG * T * 0.6;
+            const vx = (dx / T) * dragComp;
+            const vz = (dz / T) * dragComp;
+            const vy = ((dy - 0.5 * g * T * T) / T) * dragComp;
+
             const v0 = vec3(vx, vy, vz);
-            if (simulateScore(v0)) {
-              return { vel: v0, chance, dist01 };
+            const result = simulateFull(v0);
+
+            if (result.scored) {
+              // 找到进球解，直接返回
+              return { vel: v0, chance: 1, dist01 };
             }
-            const r = evaluateShot(v0, T + 0.6);
-            const safeR = WORLD.RIM_R - WORLD.BALL_R * 0.6;
-            const penalty = r > safeR ? (r - safeR) * 3.0 : 0;
-            const score = r + penalty;
-            if (score < best.r) best = { r: score, v: v0 };
+
+            if (result.r < bestScore) {
+              bestScore = result.r;
+              bestVel = v0;
+            }
           }
         }
 
-        if (best.v) {
-          return { vel: best.v, chance, dist01 };
+        // 如果没有找到进球解，返回最接近的
+        if (bestVel) {
+          return { vel: bestVel, chance: 1, dist01 };
         }
 
-        // 回退：解析解直接命中篮心
-        const target = vec3(WORLD.HOOP.x, WORLD.HOOP.y + lift0, WORLD.HOOP.z);
-        const dx = target.x - fromPos.x;
-        const dz = target.z - fromPos.z;
-        const dy = target.y - fromPos.y;
-        const vx = solveV0(dx, T0, kx);
-        const vz = solveV0(dz, T0, kx);
-        const vy = solveV0Y(dy, T0, ky, PHYS.G);
-        return { vel: vec3(vx, vy, vz), chance, dist01 };
+        // 回退：基本抛物线
+        const T = lerp(0.7, 1.0, dist01);
+        const dx = hoopX - fromPos.x;
+        const dz = hoopZ - fromPos.z;
+        const dy = hoopY + 0.5 - fromPos.y;
+        return {
+          vel: vec3(dx / T, (dy - 0.5 * g * T * T) / T, dz / T),
+          chance: 1,
+          dist01
+        };
       }
 
       function pointsForShot(fromPos) {
         const d = Math.hypot(fromPos.x - WORLD.HOOP.x, fromPos.z - WORLD.HOOP.z);
         return d >= WORLD.THREE_R ? 3 : 2;
+      }
+
+      function initPhysicsWorld() {
+        if (!AmmoLib) return;
+        const collisionConfig = new AmmoLib.btDefaultCollisionConfiguration();
+        const dispatcher = new AmmoLib.btCollisionDispatcher(collisionConfig);
+        const broadphase = new AmmoLib.btDbvtBroadphase();
+        const solver = new AmmoLib.btSequentialImpulseConstraintSolver();
+        const world = new AmmoLib.btDiscreteDynamicsWorld(dispatcher, broadphase, solver, collisionConfig);
+        world.setGravity(new AmmoLib.btVector3(0, PHYS.G, 0));
+
+        physics.world = world;
+        physics.dispatcher = dispatcher;
+        physics.tmpTransform = new AmmoLib.btTransform();
+        physics.ballShape = new AmmoLib.btSphereShape(WORLD.BALL_R * PHYS.BALL_COLLIDER_SCALE);
+        physics.ready = true;
+
+        buildStaticBodies();
+      }
+
+      function createStaticBox(center, halfExtents, tag, opts = {}) {
+        if (!physics.world) return null;
+        const shape = new AmmoLib.btBoxShape(new AmmoLib.btVector3(halfExtents.x, halfExtents.y, halfExtents.z));
+        const transform = new AmmoLib.btTransform();
+        transform.setIdentity();
+        transform.setOrigin(new AmmoLib.btVector3(center.x, center.y, center.z));
+        const motionState = new AmmoLib.btDefaultMotionState(transform);
+        const localInertia = new AmmoLib.btVector3(0, 0, 0);
+        const rbInfo = new AmmoLib.btRigidBodyConstructionInfo(0, motionState, shape, localInertia);
+        const body = new AmmoLib.btRigidBody(rbInfo);
+        body.setFriction(opts.friction ?? 0.8);
+        body.setRestitution(opts.restitution ?? 0.4);
+        physics.world.addRigidBody(body, COLLISION.STATIC, COLLISION.BALL);
+        body.userData = { type: tag };
+        physics.staticBodies.push(body);
+        return body;
+      }
+
+      function createRimBody() {
+        if (!physics.world) return null;
+        const shape = new AmmoLib.btCompoundShape();
+        const tubeR = AMMO_CFG.RIM_TUBE_R;
+        const segments = AMMO_CFG.RIM_SEGMENTS;
+        const rimR = WORLD.RIM_R;
+        for (let i = 0; i < segments; i++) {
+          const a = (i / segments) * Math.PI * 2;
+          const t = new AmmoLib.btTransform();
+          t.setIdentity();
+          t.setOrigin(new AmmoLib.btVector3(Math.cos(a) * rimR, 0, Math.sin(a) * rimR));
+          shape.addChildShape(t, new AmmoLib.btSphereShape(tubeR));
+        }
+        const transform = new AmmoLib.btTransform();
+        transform.setIdentity();
+        transform.setOrigin(new AmmoLib.btVector3(WORLD.HOOP.x, WORLD.HOOP.y, WORLD.HOOP.z));
+        const motionState = new AmmoLib.btDefaultMotionState(transform);
+        const localInertia = new AmmoLib.btVector3(0, 0, 0);
+        const rbInfo = new AmmoLib.btRigidBodyConstructionInfo(0, motionState, shape, localInertia);
+        const body = new AmmoLib.btRigidBody(rbInfo);
+        body.setRestitution(PHYS.RIM_REST);
+        body.setFriction(PHYS.RIM_FRICTION);
+        physics.world.addRigidBody(body, COLLISION.RIM, COLLISION.BALL);
+        body.userData = { type: "rim" };
+        physics.staticBodies.push(body);
+        return body;
+      }
+
+      function buildStaticBodies() {
+        const zMin = -2.0;
+        const zMax = WORLD.SHOOT_Z_MAX + 1.0;
+        const floorHalfZ = (zMax - zMin) * 0.5;
+        const floorCenterZ = (zMax + zMin) * 0.5;
+        const floorHalfY = AMMO_CFG.FLOOR_THICK * 0.5;
+        const floorHalfX = WORLD.COURT_W * 0.6;
+
+        createStaticBox(
+          vec3(0, WORLD.FLOOR_Y - floorHalfY, floorCenterZ),
+          vec3(floorHalfX, floorHalfY, floorHalfZ),
+          "floor",
+          { friction: PHYS.FLOOR_FRICTION, restitution: PHYS.FLOOR_REST },
+        );
+
+        const boardHalfX = WORLD.BACKBOARD_W * 0.5;
+        const boardHalfY = WORLD.BACKBOARD_H * 0.5;
+        const boardHalfZ = AMMO_CFG.BOARD_THICK * 0.5;
+        createStaticBox(
+          vec3(WORLD.HOOP.x, WORLD.BACKBOARD_Y0 + boardHalfY, WORLD.BACKBOARD_Z - boardHalfZ),
+          vec3(boardHalfX, boardHalfY, boardHalfZ),
+          "board",
+          { friction: PHYS.BOARD_FRICTION, restitution: PHYS.BOARD_REST },
+        );
+
+        createRimBody();
+      }
+
+      function createBallBody(ball, pos, vel) {
+        if (!physics.ready || !physics.world || !physics.ballShape) return;
+        const transform = new AmmoLib.btTransform();
+        transform.setIdentity();
+        transform.setOrigin(new AmmoLib.btVector3(pos.x, pos.y, pos.z));
+        const motionState = new AmmoLib.btDefaultMotionState(transform);
+        const mass = 0.62;
+        const localInertia = new AmmoLib.btVector3(0, 0, 0);
+        physics.ballShape.calculateLocalInertia(mass, localInertia);
+        const rbInfo = new AmmoLib.btRigidBodyConstructionInfo(mass, motionState, physics.ballShape, localInertia);
+        const body = new AmmoLib.btRigidBody(rbInfo);
+        body.setRestitution(PHYS.BALL_REST);
+        body.setFriction(PHYS.BALL_FRICTION);
+        body.setRollingFriction(0.08);
+        body.setDamping(PHYS.AIR_DRAG, PHYS.ANGULAR_DAMPING);
+        body.setLinearVelocity(new AmmoLib.btVector3(vel.x, vel.y, vel.z));
+        body.setAngularVelocity(new AmmoLib.btVector3(0, 0, 0));
+        const mask = COLLISION.STATIC | COLLISION.RIM;
+        physics.world.addRigidBody(body, COLLISION.BALL, mask);
+        body.userData = { type: "ball", ball };
+        physics.ballBodies.add(body);
+        ball.body = body;
+        ball.prevY = pos.y;
+        ball.age = 0;
+      }
+
+      function syncBallFromBody(ball) {
+        if (!ball.body || !physics.tmpTransform) return;
+        const motionState = ball.body.getMotionState();
+        if (motionState) {
+          motionState.getWorldTransform(physics.tmpTransform);
+          const origin = physics.tmpTransform.getOrigin();
+          ball.pos.x = origin.x();
+          ball.pos.y = origin.y();
+          ball.pos.z = origin.z();
+        }
+        const vel = ball.body.getLinearVelocity();
+        ball.vel.x = vel.x();
+        ball.vel.y = vel.y();
+        ball.vel.z = vel.z();
+      }
+
+      function removeBallBody(ball) {
+        if (!ball.body || !physics.world) {
+          ball.body = null;
+          return;
+        }
+        physics.world.removeRigidBody(ball.body);
+        physics.ballBodies.delete(ball.body);
+        ball.body = null;
+      }
+
+      function clearPhysicsBalls() {
+        for (const ball of state.balls) {
+          removeBallBody(ball);
+        }
+        physics.ballBodies.clear();
+        state.balls.length = 0;
+      }
+
+      function applyAutoAimAssist(ball, dt) {
+        // 自动瞄准模式不再使用辅助拉力，完全依赖真实物理
+        // 此函数保留但不执行任何操作
+      }
+
+      function handleBallScore(ball) {
+        if (ball.scored) return false;
+        if (ball.prevY > WORLD.HOOP.y + 0.02 && ball.pos.y <= WORLD.HOOP.y - 0.02) {
+          const dx = ball.pos.x - WORLD.HOOP.x;
+          const dz = ball.pos.z - WORLD.HOOP.z;
+          const r = Math.hypot(dx, dz);
+          const scoreR = getScoreRadius();
+          if (r <= scoreR) {
+            ball.scored = true;
+            return true;
+          }
+        }
+        return false;
+      }
+
+      function handleBallLife(ball) {
+        const v = vlen(ball.vel);
+        if (ball.age > 7.0 || (ball.age > 1.2 && v < 0.6 && ball.pos.y <= WORLD.BALL_R + 0.01)) {
+          ball.alive = false;
+        }
+      }
+
+      function handlePhysicsContacts() {
+        if (!physics.dispatcher) return;
+        const dispatcher = physics.dispatcher;
+        const numManifolds = dispatcher.getNumManifolds();
+        const t = now();
+        for (let i = 0; i < numManifolds; i++) {
+          const manifold = dispatcher.getManifoldByIndexInternal(i);
+          if (manifold.getNumContacts() === 0) continue;
+          const body0 = AmmoLib.castObject(manifold.getBody0(), AmmoLib.btRigidBody);
+          const body1 = AmmoLib.castObject(manifold.getBody1(), AmmoLib.btRigidBody);
+          const ud0 = body0.userData;
+          const ud1 = body1.userData;
+          if (!ud0 || !ud1) continue;
+          let ball = null;
+          let kind = null;
+          if (ud0.type === "ball" && ud1.type !== "ball") {
+            ball = ud0.ball;
+            kind = ud1.type;
+          } else if (ud1.type === "ball" && ud0.type !== "ball") {
+            ball = ud1.ball;
+            kind = ud0.type;
+          }
+          if (!ball || ball.held || !kind) continue;
+          const speed = vlen(ball.vel);
+          if (speed < 1.2) continue;
+          if (!ball.lastImpact) ball.lastImpact = {};
+          const last = ball.lastImpact[kind] || 0;
+          if (t - last < 120) continue;
+          ball.lastImpact[kind] = t;
+          if (kind === "board") {
+            audio.board();
+            spawnImpact(ball.pos, "board");
+          } else if (kind === "rim") {
+            audio.rim();
+            spawnImpact(ball.pos, "rim");
+          } else if (kind === "wall") {
+            audio.rim();
+            spawnImpact(ball.pos, "wall");
+          } else if (kind === "floor") {
+            audio.rim();
+          }
+        }
+      }
+
+      function stepPhysics(dt) {
+        if (!physics.ready || !physics.world) return;
+        for (const ball of state.balls) {
+          if (!ball.body || ball.held) continue;
+          syncBallFromBody(ball);
+          ball.prevY = ball.pos.y;
+          applyAutoAimAssist(ball, dt);
+        }
+
+        physics.world.stepSimulation(dt, AMMO_CFG.MAX_SUB_STEPS, AMMO_CFG.FIXED_STEP);
+
+        for (const ball of state.balls) {
+          if (!ball.body || ball.held) continue;
+          ball.age += dt;
+          syncBallFromBody(ball);
+          if (handleBallScore(ball)) {
+            state.match.score += ball.points;
+            state.match.makes += 1;
+            state.match.streak += 1;
+            state.netKick = 1.0;
+            audio.score();
+            updateHud();
+            if (state.match.score >= state.match.target) {
+              endMatch(true);
+              break;
+            }
+          }
+          handleBallLife(ball);
+        }
+
+        handlePhysicsContacts();
+        state.balls = state.balls.filter((b) => {
+          if (b.alive) return true;
+          removeBallBody(b);
+          return false;
+        });
       }
 
       // ====== Ball ======
@@ -1231,6 +1586,7 @@
           pos: vec3(pos.x, pos.y, pos.z),
           vel: vec3(vel.x, vel.y, vel.z),
           points,
+          body: null,
           held: false,
           auto: false,
           willMake: false,
@@ -1240,6 +1596,7 @@
           prevY: pos.y,
           wasAboveRim: pos.y > WORLD.HOOP.y + 0.15,
           spin: (Math.random() * 2 - 1) * 14,
+          lastImpact: {},
         };
       }
 
@@ -1301,22 +1658,10 @@
 
         // 空气阻力
         ball.vel.x *= 1 - PHYS.AIR_DRAG * dt;
-        ball.vel.y *= 1 - PHYS.AIR_DRAG * dt * 0.3;
+        ball.vel.y *= 1 - PHYS.AIR_DRAG * dt;
         ball.vel.z *= 1 - PHYS.AIR_DRAG * dt;
 
-        // 自动瞄准“概率命中”辅助：仅在接近篮筐、下落阶段轻微拉向篮心
-        if (ball.auto && ball.willMake && ball.vel.y < 0 && ball.pos.y > WORLD.HOOP.y - 0.35) {
-          const dx = WORLD.HOOP.x - ball.pos.x;
-          const dz = WORLD.HOOP.z - ball.pos.z;
-          const d = Math.hypot(dx, dz);
-          if (d < 3.0) {
-            const pull = clamp((3.0 - d) / 3.0, 0, 1);
-            const ax = (dx / Math.max(1e-6, d)) * (12.0 * pull);
-            const az = (dz / Math.max(1e-6, d)) * (12.0 * pull);
-            ball.vel.x += ax * dt;
-            ball.vel.z += az * dt;
-          }
-        }
+        // 自动瞄准模式不再使用辅助拉力，完全依赖真实物理
 
         // 重力
         ball.vel.y += PHYS.G * dt;
@@ -1326,35 +1671,7 @@
         ball.pos.y += ball.vel.y * dt;
         ball.pos.z += ball.vel.z * dt;
 
-        // 边界：左右墙
-        const xMin = -WORLD.COURT_W * 0.5 + WORLD.BALL_R;
-        const xMax = WORLD.COURT_W * 0.5 - WORLD.BALL_R;
-        if (ball.pos.x < xMin) {
-          ball.pos.x = xMin;
-          ball.vel.x = -ball.vel.x * PHYS.WALL_REST;
-          audio.rim();
-          spawnImpact(ball.pos, "wall");
-        } else if (ball.pos.x > xMax) {
-          ball.pos.x = xMax;
-          ball.vel.x = -ball.vel.x * PHYS.WALL_REST;
-          audio.rim();
-          spawnImpact(ball.pos, "wall");
-        }
-
-        // 边界：前后（允许略过篮筐后方）
-        const zMin = -2.0 + WORLD.BALL_R;
-        const zMax = WORLD.SHOOT_Z_MAX + 1.0 - WORLD.BALL_R;
-        if (ball.pos.z < zMin) {
-          ball.pos.z = zMin;
-          ball.vel.z = -ball.vel.z * PHYS.WALL_REST;
-          audio.rim();
-          spawnImpact(ball.pos, "wall");
-        } else if (ball.pos.z > zMax) {
-          ball.pos.z = zMax;
-          ball.vel.z = -ball.vel.z * PHYS.WALL_REST;
-          audio.rim();
-          spawnImpact(ball.pos, "wall");
-        }
+        // 边界墙已移除，球可以飞出场外
 
         // 地面
         const yMin = WORLD.BALL_R;
@@ -1399,9 +1716,7 @@
           const dx = ball.pos.x - WORLD.HOOP.x;
           const dz = ball.pos.z - WORLD.HOOP.z;
           const r = Math.hypot(dx, dz);
-          const scoreR = ball.auto && ball.willMake
-            ? WORLD.RIM_R + WORLD.BALL_R * 0.25
-            : WORLD.RIM_R - WORLD.BALL_R * 0.35;
+          const scoreR = getScoreRadius();
           if (r <= scoreR) {
             ball.scored = true;
             return "score";
@@ -1739,11 +2054,27 @@
         const cy = state.aim.cy;
 
         const moved = state.aim.moved;
+        const dpr = projectionMap.dpr || 1;
+        const psx = sx * dpr;
+        const psy = sy * dpr;
+        ctx.save();
+        ctx.lineWidth = Math.max(2, canvas.width * 0.0025);
+        ctx.strokeStyle = "rgba(255, 255, 255, 0.9)";
+        ctx.fillStyle = "rgba(255, 204, 0, 0.25)";
+        ctx.shadowColor = "rgba(0,0,0,0.25)";
+        ctx.shadowBlur = 10;
+        const r = Math.max(10, canvas.width * 0.012);
+        ctx.beginPath();
+        ctx.arc(psx, psy, r, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+        ctx.restore();
+
         if (moved < 6) return;
 
         // 用“真实投篮方向”画辅助线，避免手势方向与实际轨迹不一致
         const dtMs = now() - state.aim.st;
-        const from = state.aim.startWorld || (screenToCourtWorld(sx, sy, WORLD.BALL_R) || screenToCourt(sx, sy));
+        const from = state.aim.startWorld || (screenToCourtWorld(sx, sy, WORLD.BALL_R, false) || screenToCourt(sx, sy));
         const vel = swipeToVelocity(sx, sy, cx, cy, dtMs, from, true);
         const dir = vnorm(vec3(vel.x, 0, vel.z));
         const len = clamp(Math.hypot(vel.x, vel.z) * 0.18, 1.2, 3.5);
@@ -1813,17 +2144,22 @@
         const drawFrom = getAimOrigin(from);
         const vel = swipeToVelocity(state.aim.sx, state.aim.sy, state.aim.cx, state.aim.cy, dtMs, from, true);
 
-        // 简化弹道：不考虑碰撞，只做抛物线预估，足够用于“感觉”与瞄准
+        // 预测弹道：使用与 Ammo 物理一致的阻尼与重力做数值积分
         const tMax = 1.4;
-        const steps = 18;
+        const steps = 20;
+        const dt = tMax / steps;
         const pts = [];
-        for (let i = 0; i <= steps; i++) {
-          const t = (i / steps) * tMax;
-          const x = drawFrom.x + vel.x * t;
-          const z = drawFrom.z + vel.z * t;
-          const y = drawFrom.y + vel.y * t + 0.5 * PHYS.G * t * t;
-          if (y < WORLD.BALL_R) break;
-          pts.push(vec3(x, y, z));
+        let pos = vec3(drawFrom.x, drawFrom.y, drawFrom.z);
+        let v = vec3(vel.x, vel.y, vel.z);
+        pts.push(vec3(pos.x, pos.y, pos.z));
+        for (let i = 0; i < steps; i++) {
+          v.x *= 1 - PHYS.AIR_DRAG * dt;
+          v.y *= 1 - PHYS.AIR_DRAG * dt;
+          v.z *= 1 - PHYS.AIR_DRAG * dt;
+          v.y += PHYS.G * dt;
+          pos = vadd(pos, vmul(v, dt));
+          if (pos.y < WORLD.BALL_R) break;
+          pts.push(vec3(pos.x, pos.y, pos.z));
         }
         if (pts.length < 2) return;
 
@@ -1900,24 +2236,28 @@
 
         // 物理更新（match 时才更新；story 时冻结画面）
         if (state.mode === "match" && state.match.running) {
-          for (const ball of state.balls) {
-            if (ball.held) continue;
-            const evt = tickBall(ball, dt);
-            if (evt === "score") {
-              state.match.score += ball.points;
-              state.match.makes += 1;
-              state.match.streak += 1;
-              state.netKick = 1.0;
-              audio.score();
-              updateHud();
-              if (state.match.score >= state.match.target) {
-                // 提前胜利：立即触发结算
-                endMatch(true);
-                break;
+          if (physics.ready) {
+            stepPhysics(dt);
+          } else {
+            for (const ball of state.balls) {
+              if (ball.held) continue;
+              const evt = tickBall(ball, dt);
+              if (evt === "score") {
+                state.match.score += ball.points;
+                state.match.makes += 1;
+                state.match.streak += 1;
+                state.netKick = 1.0;
+                audio.score();
+                updateHud();
+                if (state.match.score >= state.match.target) {
+                  // 提前胜利：立即触发结算
+                  endMatch(true);
+                  break;
+                }
               }
             }
+            state.balls = state.balls.filter((b) => b.alive);
           }
-          state.balls = state.balls.filter((b) => b.alive);
         }
 
         if (state.effects.length) {
@@ -1987,7 +2327,7 @@
         if (!canShoot()) return;
         if (state.aim.active) return;
         const p = getLocalPoint(e);
-        const startWorld = screenToCourtWorld(p.x, p.y, WORLD.BALL_R) || screenToCourt(p.x, p.y);
+        const startWorld = screenToCourtWorld(p.x, p.y, WORLD.BALL_R, false) || screenToCourt(p.x, p.y);
         state.aim.active = true;
         state.aim.pointerId = e.pointerId;
         state.aim.sx = p.x;
@@ -2003,13 +2343,6 @@
           clearTimeout(state.aim.longPressTimer);
           state.aim.longPressTimer = null;
         }
-        state.aim.longPressTimer = setTimeout(() => {
-          if (!state.aim.active) return;
-          if (state.aim.moved > INPUT.LONGPRESS_MAX_PX) return;
-          state.aim.longPressed = true;
-          state.aim.forceManual = true;
-          enterFirstPerson(state.aim.startWorld || startWorld);
-        }, INPUT.LONGPRESS_MS);
 
         try {
           canvasWrap.setPointerCapture(e.pointerId);
@@ -2057,7 +2390,7 @@
         const preview = state.aim.previewBall;
         if (preview) {
           // 起点严格使用 pointerdown 时的世界坐标（避免多次映射造成偏差）
-          const pos = state.aim.startWorld || (screenToCourtWorld(sx, sy, WORLD.BALL_R) || screenToCourt(sx, sy));
+          const pos = state.aim.startWorld || (screenToCourtWorld(sx, sy, WORLD.BALL_R, false) || screenToCourt(sx, sy));
           preview.pos.x = pos.x;
           preview.pos.y = pos.y;
           preview.pos.z = pos.z;
@@ -2095,6 +2428,9 @@
           preview.age = 0;
           preview.prevY = preview.pos.y;
           preview.scored = false;
+          if (physics.ready) {
+            createBallBody(preview, preview.pos, preview.vel);
+          }
 
           state.match.shots += 1;
         }
@@ -2212,8 +2548,31 @@
         openStory(CAMPAIGN[0].pre);
       }
 
-      boot();
-      requestAnimationFrame(tick);
+      function startGame() {
+        boot();
+        requestAnimationFrame(tick);
+      }
+
+      function initAmmoAndStart() {
+        if (typeof Ammo === "function") {
+          Ammo().then((lib) => {
+            AmmoLib = lib;
+            initPhysicsWorld();
+            startGame();
+          }).catch(() => {
+            console.warn("Ammo 初始化失败，回退为简化物理");
+            startGame();
+          });
+          return;
+        }
+        if (window.Ammo && window.Ammo.btVector3) {
+          AmmoLib = window.Ammo;
+          initPhysicsWorld();
+        }
+        startGame();
+      }
+
+      initAmmoAndStart();
     })();
   </script>
 </body>

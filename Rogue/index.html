@@ -738,13 +738,21 @@
             joystickMode = mode;
             joystickWrap.classList.add('active');
             if (mode === 'free') {
+                // 先获取尺寸（在移动前）
                 const rect = joystickBase.getBoundingClientRect();
-                joystickWrap.style.left = `${clientX - rect.width / 2}px`;
-                joystickWrap.style.top = `${clientY - rect.height / 2}px`;
+                const halfWidth = rect.width / 2;
+                const halfHeight = rect.height / 2;
+                // 先重置球到中心位置
+                joystickStick.style.transform = 'translate(-50%, -50%)';
+                joystick.dx = 0;
+                joystick.dy = 0;
+                // 再移动整个摇杆到点击位置
+                joystickWrap.style.left = `${clientX - halfWidth}px`;
+                joystickWrap.style.top = `${clientY - halfHeight}px`;
                 joystickWrap.style.bottom = 'auto';
+                // 记录原点
                 joystick.originX = clientX;
                 joystick.originY = clientY;
-                setJoystick(0, 0, rect.width * 0.35);
             } else {
                 handleJoystickMove(clientX, clientY);
             }
